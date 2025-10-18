@@ -1,0 +1,43 @@
+Bar Chart Tool Schema (MCP)
+====================================
+
+Tool name: generate_bar_chart
+Description: Generate a bar chart to show data for numerical comparisons among different categories, such as comparing categorical data and for horizontal comparisons.
+
+Input JSON schema:
+{
+  "axisXTitle": "string (optional, x-axis title)",
+  "axisYTitle": "string (optional, y-axis title)",
+  "data": [
+    {
+      "category": "string (required)",
+      "value": "number (required)",
+      "group": "string (optional, for grouped/stacked charts)"
+    }
+  ],
+  "height": "integer (optional, default 600)",
+  "group": "boolean (optional, default false)",
+  "stack": "boolean (optional, default false)",
+  "theme": "string (optional, default 'default', enum ['default', 'dark'])",
+  "title": "string (optional, chart title)",
+  "width": "integer (optional, default 800)",
+  "outputType": "string (optional, default 'png', enum ['png', 'svg', 'option'])"
+}
+
+Example:
+{
+  "title": "Project Hours and Costs",
+  "axisXTitle": "Project Name",
+  "axisYTitle": "Planned Hours",
+  "data": [
+    {"category": "Blade Runner 3.0", "value": 76.8},
+    {"category": "Fleet Intelligence", "value": 322.2},
+    {"category": "Concept Memo", "value": 525.7}
+  ],
+  "height": 600,
+  "width": 800,
+  "theme": "default",
+  "outputType": "option"
+}
+
+For grouped/stacked bar charts, include the "group" field in each data item and set "group" or "stack" to true.

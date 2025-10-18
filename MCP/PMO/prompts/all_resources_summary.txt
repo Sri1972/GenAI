@@ -1,0 +1,20 @@
+All colleagues or resources Summary Workflow:
+
+For unfiltered resource directory requests:
+1. Call get_all_resources() directly (no filters needed)
+2. Organize results by strategic_portfolio, product_line, and resource_role
+3. Provide summary statistics:
+   - Total colleagues or resources count
+   - Count by strategic_portfolio
+   - Count by product_line
+   - Count by resource_role
+4. Capacity summaries:
+   - Total yearly capacity
+   - Breakdown by portfolio/product line/role
+5. Highlight resources with missing data or unusual capacity
+6. Format as structured overview with key insights
+
+If we use a filter such as these:
+1. Specific colleague or resource name
+2. Colleagues or resources from a specific strategic portfolio or product line
+Call the get_all_resources() tool and filter based on the data that you have.

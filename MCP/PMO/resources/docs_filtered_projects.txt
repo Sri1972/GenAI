@@ -1,0 +1,88 @@
+This resource can be used for all projects when we have filters in the query.
+The filters can be on the following fields:
+strategic_portfolio: Business area the project belongs to (string, e.g., "Market & Sell")
+product_line: Product area (string, e.g., "PAS")
+technology_project: Technology project flag (string, "YES" or "NO")
+
+If a filter is used, you need to first call the tool - get_business_lines() which would show you the list of strategic_portfolios and product_lines.
+
+Dynamic Project Filtering (PMO API)
+
+You can now filter projects using any available project field and select which fields to return in the response.
+
+API Endpoint: POST /projects/dynamic_filter
+
+Request JSON schema:
+{
+  "fields": ["field1", "field2", ...],
+  "filters": [
+    {"column": "field_name", "operator": "=", "value": "..."},
+    ...
+  ],
+  "logical_operator": "AND" // or "OR" (optional, defaults to "AND")
+}
+
+- "fields": List of columns to include in the response (besides constants).
+- "filters": List of filter conditions. Each filter is a dict with "column", "operator", and "value".
+- "logical_operator": How to combine filters ("AND" or "OR").
+
+You may use any project field as a filter or returned field. See the project data schema for available fields.
+
+Example:
+{
+  "fields": ["project_type", "start_date_est", "end_date_est"],
+  "filters": [
+    {"column": "strategic_portfolio", "operator": "=", "value": "Market & Sell"},
+    {"column": "product_line", "operator": "=", "value": "NA Industry Performance"}
+  ]
+}
+
+Project Data Dictionary
+=======================
+This is the taxonomy for the projects data. 
+
+project_id: Unique identifier for the project (integer)
+project_name: Display name of the project (string)
+strategic_portfolio: Business area the project belongs to (string, e.g., "Market & Sell")
+product_line: Product area (string, e.g., "PAS")
+project_type: Category of the project (string, e.g., "Blade Runner")
+project_description: Detailed description of the project (string)
+vitality: Project classification flag (string, "YES" or "NO")
+strategic: Project classification flag (string, "YES" or "NO")
+aim: Project classification flag (string, "YES" or "NO")
+revenue_est_growth_pa: Annual growth estimate (float or null)
+revenue_est_current_year: Current year revenue estimate (float or null)
+revenue_est_current_year_plus_1: Next year revenue estimate (float or null)
+revenue_est_current_year_plus_2: Year+2 revenue estimate (float or null)
+revenue_est_current_year_plus_3: Year+3 revenue estimate (float or null)
+start_date_est: Estimated start date (string, YYYY-MM-DD)
+end_date_est: Estimated end date (string, YYYY-MM-DD)
+start_date_actual: Actual start date (string, YYYY-MM-DD or null)
+end_date_actual: Actual end date (string, YYYY-MM-DD or null)
+current_status: Text status of the project (string, e.g., "Work In Progress")
+rag_status: RAG indicator for project health (string, "Red", "Amber", "Green", "N/A")
+comments: Additional comments (string or null)
+added_by: User who added the project (string or null)
+added_date: Date project was added (string, YYYY-MM-DD or null)
+updated_by: User who last updated the project (string or null)
+updated_date: Date project was last updated (string, YYYY-MM-DD or null)
+timesheet_project_name: Name used in timesheets (string or null)
+technology_project: Technology project flag (string, "YES" or "NO")
+project_resource_hours_planned: Total planned resource hours (float)
+project_resource_cost_planned: Total planned resource cost (float)
+project_resource_hours_actual: Total actual resource hours (float)
+project_resource_cost_actual: Total actual resource cost (float)
+resource_role_summary: Breakdown of resources by role (object)
+  <role_name>: (e.g., "Full Stack Developer", "Business Analyst")
+    total_resource_hours_planned: Planned hours for this role (float)
+    total_resource_cost_planned: Planned cost for this role (float)
+    total_resource_hours_actual: Actual hours for this role (float)
+    total_resource_cost_actual: Actual cost for this role (float)
+    resources_details: List of individual resource assignments (array)
+      resource_id: Unique identifier for the resource (integer)
+      resource_name: Name of the resource (string)
+      resource_email: Email of the resource (string)
+      resource_hours_planned: Planned hours for this resource (float)
+      resource_cost_planned: Planned cost for this resource (float)
+      resource_hours_actual: Actual hours for this resource (float)
+      resource_cost_actual: Actual cost for this resource (float)

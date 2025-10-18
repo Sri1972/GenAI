@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Line Chart</title>
+    <style>
+.domain { stroke-width: 1.5; }
+
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .chart {
+            margin: 40px;
+        }
+        .legend {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .legend div {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+    </style>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <div class="chart-container">
+        <svg width="960" height="500"></svg>
+        <div class="legend">
+            <div>
+                <div class="legend-color" style="background-color: steelblue;"></div>
+                <span>Total Capacity</span>
+            </div>
+            <div>
+                <div class="legend-color" style="background-color: green;"></div>
+                <span>Planned Allocation Hours</span>
+            </div>
+            <div>
+                <div class="legend-color" style="background-color: red;"></div>
+                <span>Actual Allocation Hours</span>
+            </div>
+            <div>
+                <div class="legend-color" style="background-color: purple;"></div>
+                <span>Available Capacity</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const data = [
+            {"week_start":"2025-01-01","week_end":"2025-01-05","total_capacity":19.126436781609193,"allocation_hours_planned":4.9126436781609195,"allocation_hours_actual":0,"available_capacity":14.213793103448275},
+            {"week_start":"2025-01-06","week_end":"2025-01-12","total_capacity":31.877394636015325,"allocation_hours_planned":8.187739463601533,"allocation_hours_actual":0,"available_capacity":23.68965517241379},
+            {"week_start":"2025-01-13","week_end":"2025-01-19","total_capacity":31.877394636015325,"allocation_hours_planned":8.187739463601533,"allocation_hours_actual":0,"available_capacity":23.68965517241379},
+            {"week_start":"2025-01-20","week_end":"2025-01-26","total_capacity":31.877394636015325,"allocation_hours_planned":8.187739463601533,"allocation_hours_actual":0,"available_capacity":23.68965517241379},
+            {"week_start":"2025-01-27","week_end":"2025-02-02","total_capacity":31.877394636015325,"allocation_hours_planned":8.187739463601533,"allocation_hours_actual":0,"available_capacity":23.68965517241379},
+            {"week_start":"2025-02-03","week_end":"2025-02-09","total_capacity":31.877394636015325,"allocation_hours_planned":8.187739463601533,"allocation_hours_actual":0,"available_capacity":23.68965517241379},
+            {"week_start":"2025-02-10","week_end":"2025-02-16","total_capacity":31.877394636015325,"allocation_hours_planned":8.187739463601533,"allocation_hours_actual":0,"available_capacity":23.68965517241379},
+            {"week_start":"2025-02-17","week_end":"2025-02-23","total_capacity":31.877394636015325,"allocation_hours_planned":8.187739463601533,"allocation_hours_actual":0,"available_capacity":23.68965517241379},
+            {"week_start":"2025-02-24","week_end":"2025-03-02","total_capacity":31.877394636015325,"allocation_hours_planned":8.187739463601533,"allocation_hours_actual":0,"available_capacity":23.68965517241379},
+            {"week_start":"2025-03-03","week_end":"2025-03-09","total_capacity":31.877394636015325,"allocation_hours_planned":10.187739463601533,"allocation_hours_actual":0,"available_capacity":21.68965517241379},
+            {"week_start":"2025-03-10","week_end":"2025-03-16","total_capacity":31.877394636015325,"allocation_hours_planned":10.187739463601533,"allocation_hours_actual":0,"available_capacity":21.68965517241379},
+            {"week_start":"2025-03-17","week_end":"2025-03-23","total_capacity":31.877394636015325,"allocation_hours_planned":10.187739463601533,"allocation_hours_actual":0,"available_capacity":21.68965517241379},
+            {"week_start":"2025-03-24","week_end":"2025-03-30","total_capacity":31.877394636015325,"allocation_hours_planned":10.187739463601533,"allocation_hours_actual":0,"available_capacity":21.68965517241379},
+            {"week_start":"2025-03-31","week_end":"2025-04-06","total_capacity":31.877394636015325,"allocation_hours_planned":6.037547892720307,"allocation_hours_actual":0,"available_capacity":25.839846743295016},
+            {"week_start":"2025-04-07","week_end":"2025-04-13","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-04-14","week_end":"2025-04-20","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-04-21","week_end":"2025-04-27","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-04-28","week_end":"2025-05-04","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-05-05","week_end":"2025-05-11","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-05-12","week_end":"2025-05-18","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-05-19","week_end":"2025-05-25","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-05-26","week_end":"2025-06-01","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-06-02","week_end":"2025-06-08","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-06-09","week_end":"2025-06-15","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-06-16","week_end":"2025-06-22","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-06-23","week_end":"2025-06-29","total_capacity":31.877394636015325,"allocation_hours_planned":5.0,"allocation_hours_actual":0,"available_capacity":26.877394636015325},
+            {"week_start":"2025-06-30","week_end":"2025-07-06","total_capacity":31.877394636015325,"allocation_hours_planned":25.0,"allocation_hours_actual":0,"available_capacity":6.877394636015324},
+            {"week_start":"2025-07-07","week_end":"2025-07-13","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-07-14","week_end":"2025-07-20","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-07-21","week_end":"2025-07-27","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-07-28","week_end":"2025-08-03","total_capacity":25.50191570881226,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.501915708812259},
+            {"week_start":"2025-08-04","week_end":"2025-08-10","total_capacity":0.0,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":0.0},
+            {"week_start":"2025-08-11","week_end":"2025-08-17","total_capacity":0.0,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":0.0},
+            {"week_start":"2025-08-18","week_end":"2025-08-24","total_capacity":0.0,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":0.0},
+            {"week_start":"2025-08-25","week_end":"2025-08-31","total_capacity":0.0,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":0.0},
+            {"week_start":"2025-09-01","week_end":"2025-09-07","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-09-08","week_end":"2025-09-14","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-09-15","week_end":"2025-09-21","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-09-22","week_end":"2025-09-28","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-09-29","week_end":"2025-10-05","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-10-06","week_end":"2025-10-12","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-10-13","week_end":"2025-10-19","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-10-20","week_end":"2025-10-26","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-10-27","week_end":"2025-11-02","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-11-03","week_end":"2025-11-09","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-11-10","week_end":"2025-11-16","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-11-17","week_end":"2025-11-23","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-11-24","week_end":"2025-11-30","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-12-01","week_end":"2025-12-07","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-12-08","week_end":"2025-12-14","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-12-15","week_end":"2025-12-21","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-12-22","week_end":"2025-12-28","total_capacity":31.877394636015325,"allocation_hours_planned":30.0,"allocation_hours_actual":0,"available_capacity":1.8773946360153237},
+            {"week_start":"2025-12-29","week_end":"2025-12-31","total_capacity":19.126436781609193,"allocation_hours_planned":18.0,"allocation_hours_actual":0,"available_capacity":1.1264367816091942}
+        ];
+
+        const margin = { top: 20, right: 40, bottom: 60, left: 60 },
+            width = 960 - margin.left - margin.right,
+            height = 500 - margin.top - margin.bottom;
+
+        const parseDate = d3.timeParse("%Y-%m-%d");
+        data.forEach(d => {
+            d.week_start = parseDate(d.week_start);
+        });
+
+        const svg = d3.select("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const x = d3.scaleTime()
+            .domain(d3.extent(data, d => d.week_start))
+            .range([0, width]);
+
+        const y = d3.scaleLinear()
+            .domain([0, d3.max(data, d => d.total_capacity)])
+            .nice()
+            .range([height, 0]);
+
+        svg.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(d3.axisBottom(x).tickFormat(d3.timeFormat("%b %Y")).ticks(12));
+
+        svg.append("g")
+            .call(d3.axisLeft(y));
+
+        const line = d3.line()
+            .x(d => x(d.week_start))
+            .y(d => y(d.total_capacity));
+
+        svg.append("path")
+            .datum(data)
+            .attr("fill", "none")
+            .attr("stroke", "steelblue")
+            .attr("stroke-width", 2)
+            .attr("d", line);
+
+        const line2 = d3.line()
+            .x(d => x(d.week_start))
+            .y(d => y(d.allocation_hours_planned));
+
+        svg.append("path")
+            .datum(data)
+            .attr("fill", "none")
+            .attr("stroke", "green")
+            .attr("stroke-width", 2)
+            .attr("d", line2);
+
+        const line3 = d3.line()
+            .x(d => x(d.week_start))
+            .y(d => y(d.allocation_hours_actual));
+
+        svg.append("path")
+            .datum(data)
+            .attr("fill", "none")
+            .attr("stroke", "red")
+            .attr("stroke-width", 2)
+            .attr("d", line3);
+
+        const line4 = d3.line()
+            .x(d => x(d.week_start))
+            .y(d => y(d.available_capacity));
+
+        svg.append("path")
+            .datum(data)
+            .attr("fill", "none")
+            .attr("stroke", "purple")
+            .attr("stroke-width", 2)
+            .attr("d", line4);
+
+        svg.append("text")
+            .attr("class", "x label")
+            .attr("text-anchor", "end")
+            .attr("x", width)
+            .attr("y", height + 45)
+            .text("Week Start Date");
+
+        svg.append("text")
+            .attr("class", "y label")
+            .attr("text-anchor", "end")
+            .attr("y", -40)
+            .attr("dy", ".75em")
+            .attr("transform", "rotate(-90)")
+            .text("Hours");
+    </script>
+</body>
+</html>

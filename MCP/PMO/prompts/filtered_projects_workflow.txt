@@ -1,0 +1,21 @@
+Dynamic Project Filtering Workflow:
+
+- For any query about project costs or hours, always include the following fields in the fields array:
+  project_resource_hours_planned, project_resource_cost_planned, project_resource_hours_actual, project_resource_cost_actual.
+- For summary queries, also include: project_name, strategic_portfolio, product_line, start_date_est, end_date_est.
+- For queries asking for project details or similar, include all available fields in the fields array or just pass "all_columns" in the fields array of the get_filtered_projects tools. The full list of fields is in docs_filtered_projects.txt.
+- Use the get_filtered_projects tool to filter projects using any available project field and select which fields to return.
+- Provide a list of fields to include in the response.
+- Provide a list of filters, each as a dict: {"column", "operator", "value"}.
+- Optionally specify logical_operator ("AND" or "OR").
+- If the user requests all fields or does not specify fields then if "fields" array = "all_columns".
+- For list of fields look at the docs_filtered_projects.txt resources for the tool
+- Example call:
+  fields = ["project_type", "start_date_est", "end_date_est"]
+  filters = [
+    {"column": "strategic_portfolio", "operator": "=", "value": "Market & Sell"},
+    {"column": "product_line", "operator": "=", "value": "NA Industry Performance"}
+  ]
+  logical_operator = "AND"
+ - If the user query does not have the word cumulative in it, then do not return response field that have the word cumulative in it. Return all the other fields.
+- See the project data schema for available fields.

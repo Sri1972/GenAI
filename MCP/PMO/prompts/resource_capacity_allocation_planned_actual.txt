@@ -1,0 +1,52 @@
+Resource Capacity Allocation Planned/Actual Prompt:
+If a user query specifies a resource/colleague name instead of a resource_id, first call get_all_resources() to look up the resource_id for that name. 
+Then call get_resource_allocation_planned_actual() with the correct resource_id, start_date, end_date, and interval (Weekly or Monthly).
+If user asks for data for a year without a specific start and end date then assume the start date as Jan 1 of that year and end date as Dec 31 of that year.
+Always validate the resource_id before making the allocation call. If the name is ambiguous or not found, prompt the user to clarify or select from available options.
+If the user asks for charts, then please return data in the following format for the chart MCP to consume:
+If data is asked for hours or cost and if it does not specify cumulative, then we should not include the cumulative fields in the JSON response.
+If the user query does not have the word cumulative in it, then do not return response field that have the word cumulative in it. Return all the other fields.
+If the interval is weekly, then you can use the start_week and end_week field for the json time (x-axis)
+# Line and Bar Chart
+{
+  "data": [
+    {
+      "month": "2025-01",
+      "total_capacity": 146.6,
+      "allocation_hours_planned": 37.7,
+      "allocation_hours_actual": 0,
+      "available_capacity": 109.0
+    },
+    {
+      "month": "2025-02",
+      "total_capacity": 127.5,
+      "allocation_hours_planned": 32.8,
+      "allocation_hours_actual": 0,
+      "available_capacity": 94.8
+    }
+    // ... more data points ...
+  ],
+  "x_field": "month",  // field for x-axis
+  "y_fields": ["total_capacity", "allocation_hours_planned", "allocation_hours_actual", "available_capacity"], // fields for y-axis bars
+  "title": "Resource Capacity and Allocation by Month" // optional
+}
+
+# Pie Chart
+{
+  "data": [
+    {
+      "resource": "Resource A",
+      "total_capacity": 146.6,
+      "allocation_hours_planned": 37.7
+    },
+    {
+      "resource": "Resource B",
+      "total_capacity": 127.5,
+      "allocation_hours_planned": 32.8
+    }
+    // ... more data points ...
+  ],
+  "label_field": "resource",      // field for pie slice labels
+  "value_field": "total_capacity", // field for pie slice values
+  "title": "Capacity Distribution by Resource" // optional
+}

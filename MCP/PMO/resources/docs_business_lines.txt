@@ -1,0 +1,6 @@
+Business Lines Data Structure:
+- strategic_portfolio: High-level business area (e.g., 'Market & Sell', 'Vehicles In Use')
+- product_line: Specific product area (e.g., 'VIN Solutions', 'NA Industry Performance')
+- The combination defines the business context for projects
+
+Case Sensitivity: All values are case-sensitive and must match exactly for filtering

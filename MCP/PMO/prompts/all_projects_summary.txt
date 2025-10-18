@@ -1,0 +1,16 @@
+All Projects Summary Workflow:
+
+For unfiltered 'all projects' requests:
+1. Call get_all_projects() directly (no business_lines call needed)
+2. Organize results by strategic_portfolio and product_line
+3. Provide summary statistics:
+   - Total project count
+   - Count by strategic_portfolio
+   - Count by product_line
+   - Count by project status
+4. Resource summaries:
+   - Total planned vs actual hours
+   - Total planned vs actual costs
+   - Resource breakdown by portfolio/product line
+5. Highlight projects with missing data or unusual status
+6. Format as structured overview with key insights

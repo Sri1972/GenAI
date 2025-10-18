@@ -1,0 +1,18 @@
+Below is the list and details of colleague or resources. We can use the word colleague in place of resources as well.
+Resource Data Dictionary
+=======================
+
+resource_id: Unique identifier for the resource (integer)
+resource_name: Name of the resource (string)
+resource_email: Email address of the resource (string)
+resource_type: Type of resource (string, e.g., "Employee", "Contractor")
+strategic_portfolio: Business area the resource belongs to (string, e.g., "Auto Insights")
+product_line: Product area (string, e.g., "Cross-Product")
+manager_name: Name of the resource's manager (string)
+manager_email: Email address of the manager (string)
+resource_role: Role or job title of the resource (string, e.g., "VP, Technology", "Data Engineer")
+responsibility: Main responsibilities (string or null)
+skillset: Skillset or expertise (string or null)
+comments: Additional comments (string or null)
+yearly_capacity: Yearly work capacity in hours (integer)
+timesheet_resource_name: Name used in timesheets (string or null)

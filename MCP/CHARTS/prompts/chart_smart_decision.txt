@@ -1,0 +1,79 @@
+# IMPORTANT: Do NOT call get_all_projects or get_all_resources unless the user specifically asks for a list of all projects/resources.
+# If you have already called a data tool and received the needed data, proceed directly to charting. Do not call additional data tools.
+# Only call the relevant chart/data tool for the user's query. Avoid redundant tool calls.
+
+Chart Generation Workflow:
+- If the user asks for a chart, visualization, or distribution, ALWAYS call the appropriate chart tool (e.g., generate_bar_chart, generate_line_chart, generate_pie_chart) from the MCP ECharts server, NOT a data tool like get_all_projects.
+- Only call data tools if the user requests raw data or details, not a chart.
+- For bar charts, use the generate_bar_chart tool and provide the correct arguments (title, series, height, width, theme, outputType: 'png').
+- For time series or trends, use generate_line_chart.
+- For proportions or distributions, use generate_pie_chart.
+- Always ask the user to specify which fields to use for axes or labels if ambiguous.
+- Output the chart as a base64-encoded PNG image.
+- Example bar chart tool call (multi-series/grouped):
+{
+  "title": "Project Hours and Costs",
+  "series": [
+    {
+      "name": "Planned Hours",
+      "data": [
+        {"category": "Blade Runner 3.0", "value": 76.8},
+        {"category": "Fleet Intelligence", "value": 322.2},
+        {"category": "Concept Memo", "value": 525.7}
+      ]
+    },
+    {
+      "name": "Planned Cost",
+      "data": [
+        {"category": "Blade Runner 3.0", "value": 3686.4},
+        {"category": "Fleet Intelligence", "value": 15465.6},
+        {"category": "Concept Memo", "value": 25233.6}
+      ]
+    }
+  ],
+  "height": 600,
+  "width": 800,
+  "theme": "default",
+  "outputType": "png"
+}
+- Examples of how various data structures look like for line, bar and pie charts.
+    line_args = {
+        "data": [
+            {"month": "Jan", "sales": 100},
+            {"month": "Feb", "sales": 120},
+            {"month": "Mar", "sales": 90},
+            {"month": "Apr", "sales": 150}
+        ],
+        "x_field": "month",
+        "y_field": "sales"
+    }
+
+    multiline_args = {
+        "data": [
+            {"month": "Jan", "sales": 100, "expenses": 80},
+            {"month": "Feb", "sales": 120, "expenses": 90},
+            {"month": "Mar", "sales": 90, "expenses": 70},
+            {"month": "Apr", "sales": 150, "expenses": 110}
+        ],
+        "x_field": "month",
+        "y_fields": ["sales", "expenses"]
+    }
+
+    bar_args = {
+        "data": [
+            {"category": "A", "value": 10},
+            {"category": "B", "value": 20},
+            {"category": "C", "value": 15}
+        ],
+        "x_field": "category",
+        "y_field": "value"
+    }
+    pie_args = {
+        "data": [
+            {"segment": "X", "amount": 30},
+            {"segment": "Y", "amount": 50},
+            {"segment": "Z", "amount": 20}
+        ],
+        "label_field": "segment",
+        "value_field": "amount"
+    }

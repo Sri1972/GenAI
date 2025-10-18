@@ -1,0 +1,13 @@
+Business Lines Validation Workflow:
+
+When user provides portfolio/product line names (possibly approximate):
+1. Call get_business_lines() to get exact values
+2. Match user input against both strategic_portfolio and product_line fields
+3. Handle variations: lowercase, partial matches, common abbreviations
+4. Return exact case-sensitive values for subsequent filtering
+5. If no match found, suggest closest alternatives
+
+Examples:
+- 'vin solutions' → 'VIN Solutions' (product_line)
+- 'market and sell' → 'Market & Sell' (strategic_portfolio)
+- 'na industry' → 'NA Industry Performance' (product_line)

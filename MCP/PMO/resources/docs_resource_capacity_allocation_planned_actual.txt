@@ -1,0 +1,22 @@
+Resource Capacity and Allocation Planned/Actual Data Dictionary
+==================================================
+
+Here Resource means a colleague.
+
+Each entry represents a time interval (weekly or monthly) for a resource's capacity and allocation:
+
+week_start: Start date of the interval (string, YYYY-MM-DD)
+week_end: End date of the interval (string, YYYY-MM-DD)
+total_capacity: Total available capacity for the interval (float)
+allocation_hours_planned: Planned allocation hours for the interval (float)
+allocation_hours_actual: Actual allocation hours for the interval (float)
+available_capacity: Remaining available capacity for the interval (float)
+total_capacity_cumulative: Cumulative total capacity up to this interval (float)
+cumulative_planned: Cumulative planned allocation hours up to this interval (float)
+cumulative_actual: Cumulative actual allocation hours up to this interval (float)
+available_capacity_cumulative: Cumulative available capacity up to this interval (float)
+
+Notes:
+- Data is shown for the interval specified (weekly or monthly).
+- Use resource_id from get_all_resources to specify the resource.
+- Useful for capacity planning, tracking planned vs actual allocation, and identifying available bandwidth.

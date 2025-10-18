@@ -1,0 +1,19 @@
+[project]
+name = "mcp-client"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.68.0",
+    "google>=3.0.0",
+    "google-generativeai>=0.8.5",
+    "load-dotenv>=0.1.0",
+    "matplotlib>=3.10.6",
+    "mcp[cli]>=1.14.1",
+    "openai>=1.109.1",
+    "pandas>=2.3.3",
+    "pyecharts>=2.0.8",
+    "requests>=2.32.5",
+    "snapshot-selenium>=0.0.2",
+]
