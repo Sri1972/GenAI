@@ -17,7 +17,7 @@ from mcp.client.sse import sse_client
 # System context for LLM
 system_context = """
 You are a PMO assistant.
-Guidelines:
+Data Guidelines:
 - Always call a tool instead of guessing answers.
 - Always call a data tool and return real data for every user query.
 - Always review the resource and prompts for the tools being used
@@ -31,8 +31,13 @@ Guidelines:
 - When a user asks for mathematical calculations on numeric fields, please provide the project name, strategic_portfolio, product_line, start_date, end_date, resource hours planned and resource cost planned for each project in the summary.
 - When a user asks for mathematical calculations on numeric fields, only show non-zero values in the list
 - For any of the user query response, please try and provide your analysis based on the data that you feel is important. Include hours, costs, trends, patterns, or insights that can help in decision-making.
-- Look out for information on whether cumulative or non cumulative data is requested or not.
-- When building out charts for which the D3_MCP_SERVER_URL MCP server is used, please look for the query from the user to understand which fields from the PMO MCP and DO NOT use cumulative fields but only the other fields.
+Charts guidelines
+- If the user query involves charting, please generate D3.js v7 code for the chart based on the data retrieved from the tools.
+- If line charts are requested, always use multi-line charts for better clarity.
+- Use the following information for line charts
+- If hours and costs line chart is requested, based on the user query use the 'Month' or 'week_end' JSON resppnse field for x-axis
+- Always add the legend to the bottom of the chart below the x-axis label
+- Always enable the tooltip for points of the charts with x-axis and y-axis values
 """
 
 load_dotenv(".env")
@@ -349,15 +354,227 @@ async def run_chart(chart_type, data, features=None, chart_type_hint=None):
     # --- Inject consistent axis line thickness CSS ---
     # If <style> exists, append or replace .domain rule; else, add <style> block in <head>
     domain_css = ".domain { stroke-width: 1.5; }"
+    # Tooltip CSS for a consistent floating tooltip
+    tooltip_css = "#d3-tooltip{position:absolute;pointer-events:none;background:rgba(0,0,0,0.75);color:#fff;padding:6px 8px;border-radius:4px;font-size:12px;display:none;z-index:1000;}"
     if "<style" in chart_code:
         # Try to replace any .domain rule
         chart_code = re.sub(r"(\.domain\s*\{[^}]*?)(stroke-width\s*:\s*[^;]+;)?([^}]*\})", lambda m: f".domain {{ {domain_css} {' '.join([x for x in [m.group(1), m.group(3)] if x])} }}", chart_code, flags=re.DOTALL)
-        # If no .domain rule, just append
+        # If no .domain rule, just append domain_css and tooltip_css into the first <style>
         if ".domain {" not in chart_code:
-            chart_code = re.sub(r"(<style[^>]*>)", r"\1\n" + domain_css + "\n", chart_code, count=1)
+            chart_code = re.sub(r"(<style[^>]*>)", r"\1\n" + domain_css + "\n" + tooltip_css + "\n", chart_code, count=1)
+        else:
+            # Ensure tooltip CSS is present
+            if "d3-tooltip" not in chart_code:
+                chart_code = re.sub(r"(<style[^>]*>)", r"\1\n" + tooltip_css + "\n", chart_code, count=1)
     else:
         # Insert <style> block in <head>
-        chart_code = re.sub(r"(<head[^>]*>)", r"\1\n<style>" + domain_css + "</style>", chart_code, count=1)
+        chart_code = re.sub(r"(<head[^>]*>)", r"\1\n<style>" + domain_css + "\n" + tooltip_css + "</style>", chart_code, count=1)
+
+    # --- Inject tooltip JS and chart-data JSON for a robust bisector overlay tooltip ---
+    # Always embed the data used to generate the chart so the overlay can read it reliably.
+    try:
+        chart_json = json.dumps(data)
+    except Exception:
+        # Fallback: empty array
+        chart_json = '[]'
+
+    # Insert a <script id="chart-data"> with the JSON payload so the injected tooltip can always access raw data
+    chart_data_script = f"""<script id=\"chart-data\" type=\"application/json\">{chart_json}</script>"""
+
+    # Robust bisector overlay tooltip CSS
+    overlay_css = """#d3-tooltip{position:absolute;pointer-events:none;background:rgba(0,0,0,0.78);color:#fff;padding:8px 10px;border-radius:6px;font-size:12px;display:none;z-index:2147483647;box-shadow:0 2px 8px rgba(0,0,0,0.25);} .d3-tooltip-row{margin:2px 0;display:flex;gap:8px;align-items:center;} .d3-tooltip-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}"""
+
+    # Robust bisector overlay JS: best-effort logic to find x/y fields, build scales, create overlay, and show tooltip with all series values for nearest x
+    overlay_js = '''<script>
+(function(){
+  document.addEventListener('DOMContentLoaded', function(){
+    try{
+      // Ensure tooltip DOM element
+      let tooltip = document.getElementById('d3-tooltip');
+      if (!tooltip) { tooltip = document.createElement('div'); tooltip.id = 'd3-tooltip'; document.body.appendChild(tooltip); }
+
+      // Load chart data from injected script
+      let chartDataEl = document.getElementById('chart-data');
+      let chartData = [];
+      if (chartDataEl) {
+        try{ chartData = JSON.parse(chartDataEl.textContent || chartDataEl.innerText || '[]'); }catch(e){ chartData = []; }
+      }
+      // If no chartData, try to find a JS var named 'data' or window.__chart_data
+      if ((!chartData || !chartData.length) && window.__chart_data) chartData = window.__chart_data;
+
+      if (!chartData || chartData.length === 0) {
+        // Nothing to do
+        return;
+      }
+
+      // Determine x field: prefer common names
+      const candidateX = ['week_end','week_start','month','date','day','x','label','category','name','project_name'];
+      let xField = null;
+      const sample = chartData[0];
+      for (const c of candidateX) if (c in sample) { xField = c; break; }
+      if (!xField) {
+        // pick the first non-numeric key
+        for (const k of Object.keys(sample)){
+          const v = sample[k]; if (typeof v === 'number') continue; xField = k; break;
+        }
+      }
+      if (!xField) xField = Object.keys(sample)[0];
+
+      // Determine y fields (numeric)
+      const yFields = Object.keys(sample).filter(k => k !== xField && typeof sample[k] === 'number');
+      if (!yFields || yFields.length === 0) return;
+
+      // Parse x values to Date if they look like dates
+      const parseDate = (s)=>{
+        if (s instanceof Date) return s;
+        if (typeof s !== 'string') return null;
+        // Try ISO first
+        let d = new Date(s);
+        if (!isNaN(d)) return d;
+        // Try common formats (YYYY-MM, YYYY-MM-DD)
+        try{
+          const parts = s.split('-').map(p=>p.trim());
+          if (parts.length===2) return new Date(parts[0], parseInt(parts[1],10)-1, 1);
+          if (parts.length===3) return new Date(parts[0], parseInt(parts[1],10)-1, parseInt(parts[2],10));
+        }catch(e){}
+        return null;
+      };
+
+      const xValuesRaw = chartData.map(d=>d[xField]);
+      const xValuesDates = xValuesRaw.map(parseDate);
+      const isTime = xValuesDates.every(d=>d instanceof Date && !isNaN(d));
+
+      // find main svg
+      const svg = document.querySelector('svg');
+      if (!svg) return;
+      const svgRect = svg.getBoundingClientRect();
+      const svgWidth = +svg.getAttribute('width') || svgRect.width || 800;
+      const svgHeight = +svg.getAttribute('height') || svgRect.height || 400;
+
+      // attempt to detect margins by checking first <g> transform
+      let margin = {left:40,top:20,right:20,bottom:40};
+      const firstG = svg.querySelector('g');
+      if (firstG && firstG.getAttribute('transform')){
+        const m = firstG.getAttribute('transform').match(/translate\(([-0-9.]+),?\s*([-0-9.]+)\)/);
+        if (m) { margin.left = Math.abs(parseFloat(m[1])); margin.top = Math.abs(parseFloat(m[2])); }
+      }
+      const innerWidth = Math.max(10, svgWidth - margin.left - margin.right);
+      const innerHeight = Math.max(10, svgHeight - margin.top - margin.bottom);
+
+      // build scales locally (best-effort) so we can map data -> pixels
+      let xScale, yScale;
+      if (isTime){
+        const dates = xValuesDates;
+        const minD = d3.min(dates), maxD = d3.max(dates);
+        xScale = d3.scaleTime().domain([minD, maxD]).range([margin.left, margin.left+innerWidth]);
+      } else {
+        const domain = xValuesRaw.map(String);
+        xScale = d3.scaleBand().domain(domain).range([margin.left, margin.left+innerWidth]).padding(0.1);
+      }
+      // yScale uses extent of all numeric y fields
+      const yAll = [].concat(...chartData.map(r=>yFields.map(f=>r[f] || 0)));
+      const yMin = d3.min(yAll), yMax = d3.max(yAll);
+      yScale = d3.scaleLinear().domain([Math.min(0, yMin), yMax]).range([margin.top+innerHeight, margin.top]);
+
+      // Create overlay rect to capture pointer events
+      // Remove any previous overlay
+      d3.select(svg).selectAll('rect.__d3_overlay').remove();
+      const overlay = d3.select(svg).append('rect')
+        .attr('class','__d3_overlay')
+        .attr('x',0).attr('y',0).attr('width',svgWidth).attr('height',svgHeight)
+        .style('fill','transparent').style('pointer-events','all');
+
+      // helper: find nearest index by x value
+      const bisect = d3.bisector(function(d){ return isTime ? parseDate(d[xField]).getTime() : d[xField]; }).left;
+
+      function showForIndex(i, event){
+        if (i < 0 || i >= chartData.length) return;
+        const row = chartData[i];
+        // build HTML
+        let html = '<div class="d3-tooltip-row"><strong>' + xField + ':</strong>&nbsp;<span style="margin-left:6px">' + row[xField] + '</span></div>';
+        for (const f of yFields){
+          const color = (function(){
+            // try to find series color from legend or matched elements
+            const el = document.querySelector('[data-series="'+f+'"], [data-name="'+f+'"], .legend-item[data-name="'+f+'"]');
+            if (el){ const bg = window.getComputedStyle(el).backgroundColor; if (bg) return bg; }
+            return '#333';
+          })();
+          html += '<div class="d3-tooltip-row"><span class="d3-tooltip-swatch" style="background:'+color+'"></span><span>'+f+':</span>&nbsp;<strong style="margin-left:6px">'+(row[f]===null||row[f]===undefined?'-':row[f])+'</strong></div>';
+        }
+        tooltip.innerHTML = html; tooltip.style.display='block';
+        // Position tooltip near mouse but keep inside viewport
+        const pageX = event.pageX, pageY = event.pageY;
+        const ttW = tooltip.offsetWidth, ttH = tooltip.offsetHeight;
+        const left = Math.min(window.scrollX + document.documentElement.clientWidth - ttW - 10, pageX + 12);
+        const top = Math.max(window.scrollY + 10, pageY - ttH - 6);
+        tooltip.style.left=left+'px'; tooltip.style.top=top+'px';
+      }
+
+      function hide(){ tooltip.style.display='none'; }
+
+      overlay.on('mousemove', function(event){
+        try{
+          const [mx,my] = d3.pointer(event);
+          // convert mx to data x value
+          if (isTime){
+            const inv = xScale.invert ? xScale.invert(mx) : new Date(xScale.domain()[0].getTime() + (mx - margin.left) / innerWidth * (xScale.domain()[1].getTime() - xScale.domain()[0].getTime()));
+            // find nearest index using bisector on parsed dates
+            const key = function(d){ return parseDate(d[xField]).getTime(); };
+            const times = chartData.map(d=>parseDate(d[xField]).getTime());
+            // find closest
+            let idx = d3.bisector(function(d){return d;}).left(times, inv.getTime());
+            if (idx>0 && idx<times.length){
+              const prev = times[idx-1], next = times[idx];
+              idx = (Math.abs(prev - inv.getTime()) <= Math.abs(next - inv.getTime())) ? idx-1 : idx;
+            }
+            if (idx>=times.length) idx = times.length-1;
+            showForIndex(idx, event);
+          } else {
+            // ordinal/band: compute domain index by mapping positions of ticks or using scaleBand
+            let idx = -1;
+            if (xScale.bandwidth){
+              const domain = xScale.domain();
+              const relX = mx - margin.left;
+              const step = innerWidth / domain.length;
+              idx = Math.floor(relX / step);
+              idx = Math.max(0, Math.min(domain.length-1, idx));
+            } else {
+              // fallback: find nearest by string x position using ticks
+              const ticks = Array.from(svg.querySelectorAll('.x.axis .tick, g.tick'));
+              if (ticks.length){
+                const coords = ticks.map(t=>({node:t, x: t.getBoundingClientRect().left + t.getBoundingClientRect().width/2}));
+                const pageX = event.clientX;
+                let nearest = coords[0]; let minD = Math.abs(coords[0].x - pageX);
+                for (let i=1;i<coords.length;i++){ const d = Math.abs(coords[i].x - pageX); if (d<minD){ minD=d; nearest=coords[i]; } }
+                // map nearest tick back to domain index by matched text
+                const text = nearest.node.querySelector('text');
+                if (text){ const val = text.textContent.trim(); idx = chartData.findIndex(r => String(r[xField])===val); if (idx===-1) idx = 0; }
+              }
+            }
+            if (idx>=0) showForIndex(idx, event);
+          }
+        }catch(e){ /* ignore per-chart failures */ }
+      }).on('mouseout', hide).on('mouseleave', hide);
+
+    }catch(e){ console.warn('bisector overlay injection error', e); }
+  });
+})();
+</script>''';
+
+    # Ensure overlay CSS is present in the <style> section or add a new <style> in the head
+    if '<style' in chart_code:
+        if 'd3-tooltip' not in chart_code:
+            chart_code = chart_code.replace('</style>', overlay_css + '\n</style>', 1)
+    else:
+        # add a new style block in head
+        chart_code = re.sub(r'(<head[^>]*>)', r"\1\n<style>" + overlay_css + "</style>", chart_code, count=1)
+
+    # Insert chart-data script and overlay JS before </body>
+    if '</body>' in chart_code:
+        chart_code = chart_code.replace('</body>', chart_data_script + '\n' + overlay_js + '\n</body>')
+    else:
+        chart_code = chart_code + chart_data_script + '\n' + overlay_js
+
     print("\n[Generated D3 Chart Code/Markup]:\n")
     print(chart_code[:500] + ("..." if len(chart_code) > 500 else ""))
     if chart_code:
@@ -374,6 +591,6 @@ async def run_chart(chart_type, data, features=None, chart_type_hint=None):
 
 if __name__ == "__main__":
     import asyncio
-    query = "Show a multiline chart in weekly intervals for planned and actual hours for resource id 2 for 2025."
+    query = "Show a multiline chart in monthly intervals for planned and actual hours for resource id 2 for 2025."
     #query = "Show a bar chart for planned, actual and capacity hours and costs for projects in the Market & Sell portfolio"
     asyncio.run(run(query))

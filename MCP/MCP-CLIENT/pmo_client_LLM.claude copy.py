@@ -449,7 +449,7 @@ async def run(query: str, chat_id: str = "default"):
                         # If HTML exists but has no embedded data, fall through to local renderer
 
                     # If spawnable failed or produced HTML without embedded data, build our own HTML from dataset_obj
-                    def render_chart_html_from_dataset(data_obj, title_text: str = "Chart", user_query: str = None) -> str:
+                    def render_chart_html_from_dataset(data_obj, title_text: str = "Chart") -> str:
                         """Normalized renderer: default to line charts for time-series and fall back to grouped bars when the data clearly indicates per-project planned/actual values.
 
                         Returns full HTML string embedding JSON in <script id="chart-data"> and initializing Chart.js UMD.
@@ -541,100 +541,6 @@ async def run(query: str, chat_id: str = "default"):
                                                 vals.append(0)
                                         color = palette[idx % len(palette)]
                                         datasets.append({"label": f, "data": vals, "backgroundColor": color, "borderColor": color})
-
-                        # Pie/doughnut detection: single numeric field per categorical label -> render a pie
-                        if chart_type == 'line' and records:
-                            def _is_time_like(key):
-                                return key and any(x in key.lower() for x in ("month", "date", "week", "period", "time"))
-
-                            # Choose category field: prefer name_field, else a non-time string key
-                            category_field = name_field or label_field
-                            if not category_field:
-                                for k, v in records[0].items():
-                                    if isinstance(v, str) and not _is_time_like(k):
-                                        category_field = k
-                                        break
-
-                            # Identify numeric fields present in the sample (exclude the chosen category)
-                            candidate_numeric_fields = []
-                            if category_field:
-                                for k, v in records[0].items():
-                                    if k == category_field:
-                                        continue
-                                    try:
-                                        if isinstance(v, (int, float)):
-                                            candidate_numeric_fields.append(k)
-                                        elif isinstance(v, str) and re.match(r'^[\d,\.\-\s]+$', v.strip()):
-                                            candidate_numeric_fields.append(k)
-                                    except Exception:
-                                        pass
-
-                                # If exactly one numeric field present, render pie chart
-                                if len(candidate_numeric_fields) == 1:
-                                    num_key = candidate_numeric_fields[0]
-                                    chart_type = 'pie'
-                                    labels = [str(r.get(category_field, '')) for r in records]
-                                    vals = []
-                                    for r in records:
-                                        try:
-                                            raw = r.get(num_key, 0)
-                                            if raw is None:
-                                                raw = 0
-                                            vals.append(float(re.sub(r'[^0-9.\-]', '', str(raw)) or 0))
-                                        except Exception:
-                                            vals.append(0)
-                                    # Per-segment colors
-                                    palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-                                    bg_colors = [palette[i % len(palette)] for i in range(len(labels))]
-                                    datasets.append({"label": num_key, "data": vals, "backgroundColor": bg_colors, "borderColor": bg_colors})
-
-                        # Honor explicit user request for pie/doughnut charts or convert single-dataset bars into a pie
-                        try:
-                            if user_query and re.search(r'\b(pie|donut|doughnut)\b', user_query, re.IGNORECASE):
-                                # choose doughnut if requested explicitly
-                                desired = 'doughnut' if re.search(r'\b(donut|doughnut)\b', user_query, re.IGNORECASE) else 'pie'
-                                # If we already have multiple datasets (e.g., grouped bars), collapse to single totals or pick a sensible one
-                                if datasets and len(datasets) > 1:
-                                    # prefer a dataset labeled 'Planned' or 'Total' if present
-                                    chosen = None
-                                    for ds in datasets:
-                                        if isinstance(ds.get('label', ''), str) and re.search(r'planned|plan|total', ds['label'], re.IGNORECASE):
-                                            chosen = ds
-                                            break
-                                    if not chosen:
-                                        # sum across datasets to create totals per label
-                                        sums = [0 for _ in labels]
-                                        for ds in datasets:
-                                            for i, v in enumerate(ds.get('data', [])):
-                                                try:
-                                                    sums[i] += float(v or 0)
-                                                except Exception:
-                                                    pass
-                                        palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-                                        bg_colors = [palette[i % len(palette)] for i in range(len(labels))]
-                                        datasets = [{"label": "Total", "data": sums, "backgroundColor": bg_colors, "borderColor": bg_colors}]
-                                    else:
-                                        data = chosen.get('data', [])
-                                        bg = chosen.get('backgroundColor', chosen.get('borderColor'))
-                                        if not isinstance(bg, list):
-                                            palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-                                            bg_colors = [palette[i % len(palette)] for i in range(len(labels))]
-                                        else:
-                                            bg_colors = bg
-                                        datasets = [{"label": chosen.get('label', 'Value'), "data": data, "backgroundColor": bg_colors, "borderColor": bg_colors}]
-                                # If we have a single dataset already but it's a bar, convert to pie/doughnut
-                                elif datasets and len(datasets) == 1:
-                                    # ensure backgroundColor is per-segment array
-                                    ds = datasets[0]
-                                    if not isinstance(ds.get('backgroundColor'), list):
-                                        palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-                                        bg_colors = [palette[i % len(palette)] for i in range(len(labels))]
-                                    else:
-                                        bg_colors = ds.get('backgroundColor')
-                                    datasets = [{"label": ds.get('label', 'Value'), "data": ds.get('data', []), "backgroundColor": bg_colors, "borderColor": bg_colors}]
-                                chart_type = desired
-                        except Exception:
-                            pass
 
                         # Time-series / multi-line fallback
                         if chart_type == 'line':
@@ -730,29 +636,15 @@ __CHART_PAYLOAD__
 
     try{ new Chart(ctx, { type: chartType, data: payload, options: opts }); }catch(e){ console.error('Chart init error', e); }
 
-    // build legend: for pie charts create segment-level legend, otherwise dataset totals
+    // build simple legend with totals
     var legendEl = document.getElementById('chart-legend'); legendEl.innerHTML = '';
-    if (chartType === 'pie' || chartType === 'doughnut'){
-      var labels = payload.labels || [];
-      var ds = payload.datasets && payload.datasets[0] || { data: [], backgroundColor: [] };
-      var bg = ds.backgroundColor || [];
-      for(var i=0;i<labels.length;i++){
-        var val = (ds.data && ds.data[i]) || 0;
-        var color = Array.isArray(bg) ? (bg[i] || '#777') : (bg || '#777');
-        var item = document.createElement('div'); item.className='legend-item'; item.style.background = color;
-        var sw = document.createElement('span'); sw.className='legend-color'; sw.style.background = color; sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginRight='8px'; sw.style.borderRadius='2px';
-        var lbl = document.createElement('span'); lbl.textContent = labels[i] + ' — ' + (Number(val)||0).toLocaleString();
-        item.appendChild(sw); item.appendChild(lbl); legendEl.appendChild(item);
-      }
-    } else {
-      payload.datasets.forEach(function(ds){
-        var total = 0; for(var i=0;i<ds.data.length;i++){ var v = ds.data[i]; if(typeof v === 'number' && !isNaN(v)) total += v; }
-        var item = document.createElement('div'); item.className='legend-item'; item.style.background = ds.backgroundColor || '#777';
-        var sw = document.createElement('span'); sw.className='legend-color'; sw.style.background = (ds.backgroundColor||'#777'); sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginRight='8px'; sw.style.borderRadius='2px';
-        var lbl = document.createElement('span'); lbl.textContent = ds.label + ' — ' + total.toLocaleString();
-        item.appendChild(sw); item.appendChild(lbl); legendEl.appendChild(item);
-      });
-    }
+    payload.datasets.forEach(function(ds){
+      var total = 0; for(var i=0;i<ds.data.length;i++){ var v = ds.data[i]; if(typeof v === 'number' && !isNaN(v)) total += v; }
+      var item = document.createElement('div'); item.className='legend-item'; item.style.background = ds.backgroundColor || '#777';
+      var sw = document.createElement('span'); sw.className='legend-color'; sw.style.background = (ds.backgroundColor||'#777'); sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginRight='8px'; sw.style.borderRadius='2px';
+      var lbl = document.createElement('span'); lbl.textContent = ds.label + ' — ' + total.toLocaleString();
+      item.appendChild(sw); item.appendChild(lbl); legendEl.appendChild(item);
+    });
 
   }catch(e){ console.error('render error', e); }
 })();
@@ -763,7 +655,7 @@ __CHART_PAYLOAD__
                         html_out = template.replace('__TITLE__', str(title_text)).replace('__CHART_PAYLOAD__', json.dumps(chart_payload)).replace('__CHART_TYPE__', chart_type)
                         return html_out
 
-                    html_output = render_chart_html_from_dataset(dataset_obj, title_text="Auto-generated Chart", user_query=user_query)
+                    html_output = render_chart_html_from_dataset(dataset_obj, title_text="Auto-generated Chart")
                     saved = save_html_response_if_needed(html_output, user_query, prefix="auto_chart")
                     if saved:
                         print("✅ Auto-generated chart saved to:", saved)

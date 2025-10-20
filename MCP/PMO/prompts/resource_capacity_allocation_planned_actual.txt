@@ -6,7 +6,7 @@ Always validate the resource_id before making the allocation call. If the name i
 If the user asks for charts, then please return data in the following format for the chart MCP to consume:
 If data is asked for hours or cost and if it does not specify cumulative, then we should not include the cumulative fields in the JSON response.
 If the user query does not have the word cumulative in it, then do not return response field that have the word cumulative in it. Return all the other fields.
-If the interval is weekly, then you can use the start_week and end_week field for the json time (x-axis)
+If the interval is weekly, then you can use the end_week field for the json time (x-axis)
 # Line and Bar Chart
 {
   "data": [
