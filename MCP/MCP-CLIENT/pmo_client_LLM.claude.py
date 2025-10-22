@@ -14,8 +14,13 @@ import sys
 import hashlib
 import subprocess
 import urllib.request
+import shutil
 from pathlib import Path
 from datetime import datetime
+import uuid
+import argparse
+import shutil
+import webbrowser
 
 # Load environment variables
 load_dotenv('.env')
@@ -31,11 +36,168 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 # Short-lived in-process chat memory
 chat_memories = {}
 MEMORY_MAX_MESSAGES = 200
+# Directory to store per-chat memory JSON files
+CHAT_MEMORY_DIR = Path(__file__).resolve().parent / 'chat_memory'
+
+
+def ensure_memory_dir():
+    try:
+        CHAT_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+
+def memory_file_for(chat_id: str) -> Path:
+    # sanitize chat_id for filename
+    safe = re.sub(r'[^A-Za-z0-9_.-]', '_', chat_id)[:64]
+    ensure_memory_dir()
+    return CHAT_MEMORY_DIR / f"{safe}.json"
+
+
+def load_chat_memory(chat_id: str):
+    """Load persisted chat memory for chat_id into the in-process chat_memories dict.
+    Returns the loaded list (may be empty)"""
+    path = memory_file_for(chat_id)
+    if path.exists():
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    chat_memories[chat_id] = data[-MEMORY_MAX_MESSAGES:]
+                    return chat_memories[chat_id]
+        except Exception as e:
+            print(f"Failed to load chat memory for {chat_id}: {e}")
+    # ensure key exists
+    chat_memories.setdefault(chat_id, [])
+    return chat_memories[chat_id]
+
+
+def save_chat_memory(chat_id: str, messages):
+    """Atomically save the provided messages list for chat_id to disk."""
+    path = memory_file_for(chat_id)
+    try:
+        tmp = path.with_suffix('.json.tmp')
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(messages[-MEMORY_MAX_MESSAGES:], f, ensure_ascii=False, indent=2)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+        try:
+            tmp.replace(path)
+        except Exception:
+            # fallback to move
+            os.replace(str(tmp), str(path))
+    except Exception as e:
+        print(f"Failed to save chat memory for {chat_id}: {e}")
+
+
+def set_chat_memory(chat_id: str, messages):
+    """Assign into in-memory store and persist to disk."""
+    chat_memories[chat_id] = messages[-MEMORY_MAX_MESSAGES:]
+    try:
+        save_chat_memory(chat_id, chat_memories[chat_id])
+    except Exception:
+        pass
 
 server_params = StdioServerParameters(
     command="npx",
     args=["-y", r"D:\\GenAI\\MCP\\PMO\\pmo.py"]
 )
+
+
+def forward_chart_json_to_d3(chart_payload: dict, timeout: int = 30) -> str | None:
+    """Spawn the D3 STDIO server and forward a chart JSON payload to it. Returns saved HTML path or None."""
+    try:
+        d3_server = Path(__file__).resolve().parents[1] / 'CHARTS' / 'mcp-d3-stdio-custom' / 'mcp_d3_stdio_server.py'
+        if not d3_server.exists():
+            print('D3 server not found at', d3_server)
+            return None
+        proc = subprocess.Popen([sys.executable, str(d3_server)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            proc.stdin.write(json.dumps(chart_payload) + "\n")
+            proc.stdin.flush()
+            out = proc.stdout.readline()
+            if not out:
+                err = proc.stderr.read()
+                print('D3 server no response:', err)
+                return None
+            try:
+                resp = json.loads(out)
+            except Exception:
+                print('D3 server returned non-JSON:', out)
+                return None
+            if isinstance(resp, dict) and resp.get('status') == 'ok':
+                return resp.get('path')
+            print('D3 server returned error:', resp)
+            return None
+        finally:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    except Exception as e:
+        print('Error forwarding to D3 server:', e)
+        return None
+
+
+def move_chart_to_client(server_path: str | Path, chart_type: str = 'chart', query_hint: str | None = None) -> str | None:
+    """Move server-saved HTML into the client's html-charts directory with a meaningful name.
+    Filename format: <chart_type>_<query_hint>_<YYYYmmdd_HHMMSS>_<hex>.html
+    Returns the new path string or None on failure."""
+    try:
+        server_p = Path(server_path)
+        if not server_p.exists():
+            return None
+        outdir = Path(__file__).resolve().parent / 'html-charts'
+        outdir.mkdir(parents=True, exist_ok=True)
+        # sanitize chart_type and query_hint
+        ct = (chart_type or 'chart')
+        ct = re.sub(r'[^A-Za-z0-9_-]', '_', str(ct))[:40]
+        qh = (query_hint or '')
+        qh = re.sub(r'[^A-Za-z0-9_-]', '_', str(qh))[:40] if qh else 'query'
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        h = hashlib.sha1((str(server_p) + ts).encode('utf-8')).hexdigest()[:6]
+        filename = f"{ct}_{qh}_{ts}_{h}.html"
+        dest = outdir / filename
+        try:
+            # Use shutil.move so the file is removed from the server folder (no duplicate)
+            shutil.move(str(server_p), str(dest))
+        except Exception:
+            # fallback: copy then remove original
+            try:
+                shutil.copyfile(str(server_p), str(dest))
+                try:
+                    server_p.unlink()
+                except Exception:
+                    pass
+            except Exception as e:
+                print('Failed to move/copy chart into client html-charts:', e)
+                return None
+        return str(dest)
+    except Exception as e:
+        print('Failed to move chart into client html-charts:', e)
+        return None
+
+
+def move_and_open_chart(server_path: str | Path, chart_type: str = 'chart', query_hint: str | None = None) -> str | None:
+    """Move server-saved HTML into client's html-charts and open it in the default browser."""
+    moved = move_chart_to_client(server_path, chart_type=chart_type, query_hint=query_hint)
+    if not moved:
+        return None
+    # Try platform-open: on Windows use os.startfile, fallback to webbrowser
+    try:
+        if os.name == 'nt':
+            os.startfile(moved)
+        else:
+            webbrowser.open_new_tab(Path(moved).as_uri())
+    except Exception:
+        try:
+            webbrowser.open_new_tab(Path(moved).as_uri())
+        except Exception:
+            pass
+    return moved
 
 async def run(query: str, chat_id: str = "default"):
     try:
@@ -73,14 +235,20 @@ async def run(query: str, chat_id: str = "default"):
                     "You are a PMO assistant connected to a PMO MCP server.\n"
                     "Rules:\n"
                     "- For any question requiring factual project or resource data, you MUST return a JSON tool call as the very first thing in your response.\n"
-                    "- The JSON must be a single object in this exact form with no leading text: {\"tool\":\"<tool_name>\", \"arguments\": {...}}\n"
+                    "- If the user request requires more than one MCP tool call (for example: data for multiple resource ids, or multiple independent time ranges), you MUST return a JSON object whose first property is 'plan' and whose value is a list of step objects. Each step object must include an 'id' (short string), 'tool' (tool name), and 'arguments' (object). Do NOT put any explanatory text before the JSON plan.\n"
+                    "- The JSON must be a single object in this exact form with no leading text: {\"tool\":\"<tool_name>\", \"arguments\": {...}} or when multiple steps are required: {\"plan\": [{\"id\":\"s1\", \"tool\":\"<tool_name>\", \"arguments\": {...}}, ...]}\n"
                     "- If clarification is required, ask a short clarifying question instead of guessing data.\n\n"
+                    "- Important: Treat each user data-request as independent by default. For queries that request fresh data (for example: resource ids, monthly intervals, date ranges, or explicit 'list' requests), do NOT reuse tool outputs from previous unrelated queries unless the user explicitly asks you to 'reuse previous results'. Always plan and fetch the required data anew.\n\n"
                     "Available tools and their parameters:\n"
                 ) + tool_descriptions + (
                     "\n\nExamples (when data is needed, respond exactly with the JSON object first):\n"
                     "User: \"List all projects in the PMO system.\"\n"
                     "Assistant:\n"
                     "{\"tool\":\"get_all_projects\",\"arguments\":{}}\n\n"
+                    "If a user asks for data that requires multiple independent MCP calls (for example: 'Give me monthly hours for resource id 1 and resource id 2 for 2025'), return a plan like this as your FIRST output. The client will execute each plan step in order and append their outputs back into the conversation for you to reason on and then request rendering.\n"
+                    "Example multi-step plan (fetch-only):\n"
+                    "{\"plan\":[{\"id\":\"s1\",\"tool\":\"get_resource_allocation_planned_actual\",\"arguments\":{\"resource_id\":1,\"start_date\":\"2025-01-01\",\"end_date\":\"2025-12-31\",\"interval\":\"Monthly\"}},{\"id\":\"s2\",\"tool\":\"get_resource_allocation_planned_actual\",\"arguments\":{\"resource_id\":2,\"start_date\":\"2025-01-01\",\"end_date\":\"2025-12-31\",\"interval\":\"Monthly\"}}]}\n\n"
+                    "After the client runs the plan steps it will append the tool outputs into the conversation as user messages tagged like '[TOOL OUTPUT - s1]' and '[TOOL OUTPUT - s2]'. When you receive those, produce either a render tool call (e.g., {\"tool\":\"render_from_dataset\", \"arguments\":{...}}) or a final JSON chart payload (labels/datasets) to be forwarded to the renderer.\n\n"
                     "User: \"Show planned vs actual hours for resource 42 from 2025-01-01 to 2025-12-31 monthly.\"\n"
                     "Assistant:\n"
                     "{\"tool\":\"get_resource_allocation_planned_actual\",\"arguments\":{\"resource_id\":42,\"start_date\":\"2025-01-01\",\"end_date\":\"2025-12-31\",\"interval\":\"Monthly\"}}\n\n"
@@ -114,11 +282,16 @@ async def run(query: str, chat_id: str = "default"):
                 user_message = {"role": "user", "content": query}
 
                 # Load or initialize short-lived in-process conversation memory for this chat_id
-                conversation_messages = chat_memories.get(chat_id, []).copy()
+                conversation_messages = load_chat_memory(chat_id).copy() if load_chat_memory(chat_id) else []
                 if not isinstance(conversation_messages, list):
                     conversation_messages = []
-                # Append the new user message as the latest turn
+                # Append the new user message as the latest turn and persist immediately
                 conversation_messages.append(user_message)
+                # Persist right away so a chat file exists for this chat_id even before assistant returns
+                try:
+                    set_chat_memory(chat_id, conversation_messages)
+                except Exception:
+                    pass
 
                 # Build a single string system_text from system_messages for Anthropic calls
                 system_text = "\n".join([m['content'] for m in system_messages])
@@ -126,12 +299,11 @@ async def run(query: str, chat_id: str = "default"):
                 # Helper: if assistant returns full HTML (chart), save to html-charts/ and return filepath
 
                 def save_html_response_if_needed(text: str, query_text: str = None, prefix: str = "chart") -> str | None:
-                    """If `text` looks like an HTML document, save it to MCP-CLIENT/html-charts and
-                    return the absolute path. Otherwise return None.
+                    """If `text` looks like a full HTML document or a complete chart page, save it to html-charts and return path.
+                    This function no longer attempts in-place repair — rendering/repair is centralized to the D3 MCP server.
                     """
-                    # Expanded markers to include common JS-only data fragments such as `const data =` or `window.__chart_data`
-                    markers = ["<!DOCTYPE html", "<html", "<script id=\"chart-data\"", "<div id=\"chart\"", "const data =", "var data =", "let data =", "window.__chart_data", "window.__chart"]
-                    if not any(m in text for m in markers):
+                    markers = ["<!DOCTYPE html", "<html", "<script id=\"chart-data\"", "<div id=\"chart\""]
+                    if not any(m in (text or '') for m in markers):
                         return None
                     try:
                         outdir = Path(__file__).resolve().parent / "html-charts"
@@ -140,296 +312,390 @@ async def run(query: str, chat_id: str = "default"):
                         if query_text:
                             slug = re.sub(r'[^A-Za-z0-9_-]', '_', query_text)[:40]
                         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        h = hashlib.sha1(text.encode('utf-8')).hexdigest()[:6]
-                        if slug:
-                            filename = f"{prefix}_{slug}_{ts}_{h}.html"
-                        else:
-                            filename = f"{prefix}_{ts}_{h}.html"
+                        h = hashlib.sha1((text or '').encode('utf-8')).hexdigest()[:6]
+                        filename = f"{prefix}_{slug}_{ts}_{h}.html" if slug else f"{prefix}_{ts}_{h}.html"
                         filepath = outdir / filename
-                        # Write as bytes and ensure fully flushed to disk to avoid truncation
                         with open(filepath, 'wb') as f:
-                            data = text.encode('utf-8')
+                            data = (text or '').encode('utf-8')
                             f.write(data)
                             f.flush()
                             try:
                                 os.fsync(f.fileno())
                             except Exception:
                                 pass
-                        # Verify file size
-                        try:
-                            if filepath.stat().st_size != len(data):
-                                print(f"Warning: written file size {filepath.stat().st_size} differs from expected {len(data)}")
-                        except Exception:
-                            pass
-
-                        # If Claude returned an HTML fragment that contains a JS `const data = ...` but
-                        # lacks a Chart initialization (common when responses truncated), attempt to repair
-                        def _repair_claude_html(file_path: Path) -> None:
-                            try:
-                                txt = file_path.read_text(encoding='utf-8', errors='replace')
-                                # If file already has embedded chart-data or Chart init, nothing to do
-                                if '<script id="chart-data"' in txt or 'new Chart(' in txt or 'Chart(' in txt:
-                                    return
-                                # Try to extract `const data = ...;` or `var data = ...;` JSON-like block
-                                m = re.search(r"(?:const|var|let)\s+data\s*=\s*(\[\s*[\s\S]*?\])\s*;", txt, re.IGNORECASE)
-                                # detect existing canvas id in the fragment so repaired HTML uses the same id
-                                canvas_m = re.search(r"<canvas[^>]*id=[\"']([^\"']+)[\"']", txt, re.IGNORECASE)
-                                canvas_id_detected = canvas_m.group(1) if canvas_m else 'hoursChart'
-                                if not m:
-                                    # also try to find a top-level array starting with '[' in the body
-                                    m2 = re.search(r"(\[\s*\{[\s\S]*?\}\s*\])", txt, re.IGNORECASE)
-                                    if m2:
-                                        json_text = m2.group(1)
-                                    else:
-                                        # As a last-resort, attempt to extract 'stat-card' label/value pairs from truncated HTML
-                                        # Many Claude-generated fragments include boxed stat cards; use them to build a simple chart
-                                        stats = []
-                                        try:
-                                            pairs = re.findall(r"<div[^>]*class=[\"']stat-card[\"'][^>]*>[\s\S]*?<div[^>]*class=[\"']stat-label[\"'][^>]*>(.*?)</div>\s*<div[^>]*class=[\"']stat-value[\"'][^>]*>(.*?)</div>", txt, re.IGNORECASE)
-                                            for label, val in pairs:
-                                                lbl = re.sub(r"<[^>]+>", "", label).strip()
-                                                vstr = re.sub(r"[^0-9.\-]", "", val)
-                                                try:
-                                                    v = float(vstr) if vstr not in (None, "") else 0.0
-                                                except Exception:
-                                                    v = 0.0
-                                                stats.append((lbl or 'Value', v))
-                                        except Exception:
-                                            stats = []
-
-                                        if stats:
-                                            labels = [s[0] for s in stats]
-                                            datasets = [{
-                                                'label': 'Value',
-                                                'data': [s[1] for s in stats],
-                                                'borderColor': '#1f77b4',
-                                                'backgroundColor': '#1f77b4'
-                                            }]
-                                            chart_payload = {'labels': labels, 'datasets': datasets}
-                                            # Reuse minimal repair template but try to preserve original title and canvas id
-                                            try:
-                                                title_m = re.search(r"<title[^>]*>([^<]+)</title>", txt, re.IGNORECASE)
-                                                safe_title = title_m.group(1).strip() if title_m else 'Repaired Chart'
-                                            except Exception:
-                                                safe_title = 'Repaired Chart'
-                                            # Use detected canvas id and ensure initialization happens after load
-                                            template = """<!doctype html>
-<html>
-<head>
-<meta charset='utf-8'>
-<meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>__TITLE__</title>
-<style>body{font-family:Segoe UI,Arial,sans-serif;margin:20px;background:#f5f5f5} .container{max-width:1100px;margin:0 auto;background:#fff;padding:20px;border-radius:8px} .chart-wrap{position:relative;height:520px} canvas{width:100% !important;height:100% !important;display:block}</style>
-</head>
-<body>
-<div class='container'><h3>Repaired Chart (extracted stats)</h3><div class='chart-wrap'><canvas id='__CANVAS_ID__'></canvas></div></div>
-<script id='chart-data' type='application/json'>__CHART_PAYLOAD__</script>
-<script>(function(){
-  function initChart(){
-    try{
-      var payload=JSON.parse(document.getElementById('chart-data').textContent||'{}');
-      payload.datasets = payload.datasets || [];
-      payload.datasets.forEach(function(ds){
-        ds.data = (ds.data||[]).map(function(v){ if(v==null) return 0; if(typeof v==='number') return v; var n=Number(String(v).replace(/[^0-9.\-]/g,'')); return Number.isFinite(n)?n:0; });
-        ds.borderColor = ds.borderColor || '#777';
-        ds.backgroundColor = ds.borderColor || ds.borderColor; ds.borderWidth = ds.borderWidth || 1;
-      });
-      var ctx = document.getElementById('__CANVAS_ID__').getContext('2d');
-      new Chart(ctx, { type: 'bar', data: payload, options: { responsive:true, maintainAspectRatio:false, scales: { y: { beginAtZero:true } } } });
-    }catch(e){ console.error('repair render error', e); }
-  }
-  if (typeof Chart === 'undefined'){
-    var s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'; s.onload = initChart; s.onerror = function(){ console.error('Failed to load Chart.js UMD'); initChart(); }; document.head.appendChild(s);
-  } else { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initChart); else initChart(); }
-})();</script>
-</body>
-</html>"""
-                                            out_html = template.replace('__TITLE__', safe_title).replace('__CANVAS_ID__', canvas_id_detected).replace('__CHART_PAYLOAD__', json.dumps(chart_payload))
-                                            file_path.write_text(out_html, encoding='utf-8')
-                                            print('Repaired saved HTML from stat-cards to include a chart:', str(file_path))
-                                            return
-
-                                        # No JSON and no stat-cards found — give up on repair here
-                                        return
-                                else:
-                                    json_text = m.group(1)
-                                # Parse extracted JSON
-                                try:
-                                    parsed = json.loads(json_text)
-                                except Exception:
-                                    # attempt to clean trailing commas
-                                    cleaned = re.sub(r',\s*(?=[\]\}])', '', json_text)
-                                    parsed = json.loads(cleaned)
-                                # Build a minimal payload suitable for Chart.js multi-line/time-series
-                                labels = []
-                                datasets = []
-                                if isinstance(parsed, list) and parsed:
-                                    sample = parsed[0]
-                                    # choose label key heuristically
-                                    label_key = None
-                                    for k in sample.keys():
-                                        lk = k.lower()
-                                        if any(x in lk for x in ('month','date','period','time','week')):
-                                            label_key = k
-                                            break
-                                chart_payload = {'labels': labels, 'datasets': datasets}
-                                # Minimal Chart.js page with embedded payload (use detected canvas id and deferred init)
-                                template = """<!doctype html>
-<html>
-<head>
-<meta charset='utf-8'>
-<meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Repaired Chart</title>
-<style>body{font-family:Segoe UI,Arial,sans-serif;margin:20px;background:#f5f5f5} .container{max-width:1100px;margin:0 auto;background:#fff;padding:20px;border-radius:8px} .chart-wrap{position:relative;height:520px} canvas{width:100% !important;height:100% !important;display:block}</style>
-</head>
-<body>
-<div class='container'><h3>Repaired Chart (extracted data)</h3><div class='chart-wrap'><canvas id='__CANVAS_ID__'></canvas></div></div>
-<script id='chart-data' type='application/json'>__CHART_PAYLOAD__</script>
-<script>(function(){
-  function initChart(){
-    try{
-      var payload=JSON.parse(document.getElementById('chart-data').textContent||'{}');
-      payload.datasets = payload.datasets || [];
-      payload.datasets.forEach(function(ds){ ds.data = (ds.data||[]).map(function(v){ if (v === null || v === undefined) return 0; if (typeof v === 'number') return v; var n = Number(String(v).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : 0; }); ds.backgroundColor = ds.backgroundColor || ds.borderColor || '#777'; ds.borderColor = ds.borderColor || ds.backgroundColor; ds.borderWidth = ds.borderWidth || 1; });
-      var ctx = document.getElementById('__CANVAS_ID__').getContext('2d');
-      new Chart(ctx, { type: 'bar', data: payload, options: { responsive:true, maintainAspectRatio:false, scales: { y: { beginAtZero:true } } } });
-    }catch(e){ console.error('repair render error', e); }
-  }
-  if (typeof Chart is 'undefined'){
-    var s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'; s.onload = initChart; s.onerror = function(){ console.error('Failed to load Chart.js UMD'); initChart(); }; document.head.appendChild(s);
-  } else { if (document.readyState is 'loading') document.addEventListener('DOMContentLoaded', initChart); else initChart(); }
-})();</script>
-</body>
-</html>"""
-                                out_html = template.replace('__CANVAS_ID__', canvas_id_detected).replace('__CHART_PAYLOAD__', json.dumps(chart_payload))
-                                # overwrite file with repaired HTML
-                                file_path.write_text(out_html, encoding='utf-8')
-                                print('Repaired saved HTML to include chart initialization:', str(file_path))
-                            except Exception as e:
-                                print('Could not repair saved HTML:', e)
-
-                        try:
-                            _repair_claude_html(filepath)
-                        except Exception:
-                            pass
-
                         return str(filepath)
                     except Exception as e:
                         print("Failed to save HTML to file:", e)
                         return None
 
                 # Automatic chart generation: if the user asked for a chart and we have recent tool output, spawn the chart generator
-                def try_auto_generate_chart_from_last_tool_output(user_query: str):
+                async def try_auto_generate_chart_from_last_tool_output(user_query: str):
+                    nonlocal conversation_messages
                     # Detect chart intent
                     if not re.search(r"\b(chart|plot|render|visuali[sz]e|graph)\b", user_query, re.IGNORECASE):
                         return None
-                    # Find the most recent TOOL OUTPUT in conversation_messages
+                    # Find the most recent TOOL OUTPUT block in conversation_messages (any role)
                     last_tool_data = None
                     last_tool_name = None
                     for msg in reversed(conversation_messages):
-                        if msg.get('role') == 'user' and isinstance(msg.get('content'), str) and msg.get('content', '').startswith('[TOOL OUTPUT -'):
-                            # content is like: [TOOL OUTPUT - tool_name]\n<json or text>
-                            parts = msg['content'].split('\n', 1)
-                            header = parts[0]
-                            m = re.match(r"\[TOOL OUTPUT - ([^\]]+)\]", header)
-                            if m:
-                                last_tool_name = m.group(1)
-                            last_tool_data = parts[1] if len(parts) > 1 else ''
+                        content = msg.get('content') if isinstance(msg.get('content'), str) else None
+                        if not content:
+                            continue
+                        # Accept lines that begin with [TOOL OUTPUT - NAME] or similar markers
+                        header_match = re.match(r"\[TOOL OUTPUT - ([^\]]+)\]\s*(.*)$", content, re.DOTALL)
+                        if header_match:
+                            last_tool_name = header_match.group(1)
+                            last_tool_data = header_match.group(2).strip()
+                            break
+                        # Sometimes the tool output is embedded as JSON only; accept a JSON object or array on its own line
+                        stripped = content.strip()
+                        if (stripped.startswith('{') and stripped.endswith('}')) or (stripped.startswith('[') and stripped.endswith(']')):
+                            # Heuristic: treat this as the latest tool output
+                            last_tool_data = stripped
+                            # no tool name available in this case
+                            last_tool_name = None
                             break
                     if not last_tool_data:
                         return None
 
                     # Helper: try to parse the last tool payload into usable records
                     def parse_tool_payload(payload: str):
-                        try:
-                            parsed = json.loads(payload)
-                        except Exception:
-                            # sometimes payload is double-encoded or contains leading text; try to extract first {...} or [..]
-                            start = payload.find('{')
-                            if start == -1:
-                                start = payload.find('[')
-                            end = payload.rfind('}')
-                            if start != -1 and end != -1 and end > start:
-                                try:
-                                    return json.loads(payload[start:end+1])
-                                except Exception:
-                                    return None
+                        if not payload or not isinstance(payload, str):
+                            return None
+                        text = payload.strip()
+                        # Detect a Markdown-style table and convert to list-of-dicts
+                        # Example header: | # | Project Name | Product Line | Total Planned Cost |
+                        lines = text.splitlines()
+                        tbl_start = None
+                        for i in range(len(lines)-1):
+                            # a header line with '|' followed by a separator like |---| or ---
+                            if '|' in lines[i] and re.search(r"\|?\s*-{3,}\s*\|?", lines[i+1]):
+                                tbl_start = i
+                                break
+                        if tbl_start is not None:
                             try:
-                                return json.loads(payload.strip())
-                            except Exception:
-                                return None
-                        return parsed
-
-                    dataset_obj = parse_tool_payload(last_tool_data)
-
-                    # Compose input JSON for the spawnable: include instructions and the dataset
-                    spawn_input = {
-                        "query": (
-                            "Create a JavaScript multi-line chart (lines only) from the following dataset. "
-                            "Requirements: legend below the chart, tooltip, axis stroke CSS, embed the data as JSON into the generated HTML. "
-                            "Do not include external watchers; return full HTML markup.\n\nDATA:\n" + last_tool_data
-                        )
-                    }
-
-                    # Run the spawnable generate_chart_spawnable.py using the venv python if provided, else current python
-                    try:
-                        script_path = str(Path(__file__).resolve().parent / 'generate_chart_spawnable.py')
-                        python_exec = os.getenv('VENV_PYTHON') or sys.executable
-                        # Honor CHART_ADAPTER_ONLY to skip spawnable and use HTTP adapter/local renderer only
-                        if os.getenv('CHART_ADAPTER_ONLY', '').lower() in ('1', 'true', 'yes'):
-                            proc = None
-                        else:
-                            proc = subprocess.run([python_exec, '-u', script_path], input=json.dumps(spawn_input), text=True, capture_output=True, timeout=int(os.getenv('CHART_SPAWNABLE_TIMEOUT', '120')))
-                    except Exception as e:
-                        print("Failed to spawn chart generator:", e)
-                        proc = None
-
-                    html_output = None
-                    if proc is not None:
-                        if proc.returncode != 0:
-                            # Quietly note failure and avoid dumping full stderr (which contains anyio/httpx TaskGroup stack traces)
-                            print(f"Chart generator spawnable failed (rc={proc.returncode}). Falling back to adapter/local renderer.")
-                            # Optionally include a short stderr snippet for diagnostics without flooding the console
-                            try:
-                                stderr_snippet = (proc.stderr or '').strip()
-                                if stderr_snippet:
-                                    print("Chart generator stderr (snippet):", stderr_snippet[:300].replace('\n', ' '))
+                                header_line = lines[tbl_start]
+                                # gather subsequent table rows
+                                data_rows = []
+                                for r in lines[tbl_start+2:]:
+                                    if not r.strip() or '|' not in r:
+                                        break
+                                    data_rows.append(r)
+                                def split_row(r):
+                                    return [c.strip() for c in re.split(r"\s*\|\s*", r.strip().strip('|'))]
+                                headers = split_row(header_line)
+                                parsed = []
+                                for dr in data_rows:
+                                    cells = split_row(dr)
+                                    while len(cells) < len(headers):
+                                        cells.append('')
+                                    row = {}
+                                    for h, c in zip(headers, cells):
+                                        v = c
+                                        # try to parse currency/number
+                                        num = None
+                                        try:
+                                            s = re.sub(r'[^0-9.\-]', '', v)
+                                            if s not in ('', '-', None):
+                                                num = float(s)
+                                        except Exception:
+                                            num = None
+                                        row[h or 'col'] = (num if num is not None else v)
+                                    parsed.append(row)
+                                if parsed:
+                                    return parsed
                             except Exception:
                                 pass
-                        else:
-                            html_output = (proc.stdout or '')
-
-                    # If spawnable failed or produced no HTML, attempt to call a local HTTP adapter as a quieter fallback
-                    if not html_output:
-                        adapter_url = os.getenv('CHART_ADAPTER_URL', 'http://localhost:8000/generate-chart')
+                        # If it's fenced JSON, extract inner
+                        m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+                        if m:
+                            text = m.group(1).strip()
+                        # Sometimes tool output is a quoted JSON string (double-encoded). Try to detect and unquote
+                        if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+                            try:
+                                unq = json.loads(text)
+                                if isinstance(unq, (dict, list)):
+                                    return unq
+                                text = unq if isinstance(unq, str) else text
+                            except Exception:
+                                # fall through
+                                pass
+                        # Direct parse attempt
                         try:
-                            req_data = json.dumps({"query": spawn_input['query']}).encode('utf-8')
-                            req = urllib.request.Request(adapter_url, data=req_data, headers={'Content-Type': 'application/json'})
-                            with urllib.request.urlopen(req, timeout=30) as resp:
-                                ctype = resp.headers.get('Content-Type', '')
-                                body = resp.read()
-                                text = body.decode('utf-8', errors='replace')
-                                # Prefer raw HTML responses
-                                if 'html' in ctype.lower() or text.strip().startswith('<'):
-                                    html_output = text
-                                    print(f"✅ Adapter returned HTML from {adapter_url}")
-                                else:
-                                    # Try to parse JSON-ish response and extract likely HTML
+                            return json.loads(text)
+                        except Exception:
+                            # Try to extract first {...} or [...] block
+                            start = text.find('{')
+                            if start == -1:
+                                start = text.find('[')
+                            end = text.rfind('}')
+                            if end == -1:
+                                end = text.rfind(']')
+                            if start != -1 and end != -1 and end > start:
+                                candidate = text[start:end+1]
+                                try:
+                                    return json.loads(candidate)
+                                except Exception:
+                                    # Try cleaning trailing commas
+                                    cleaned = re.sub(r',\s*(?=[\]\}])', '', candidate)
                                     try:
-                                        j = json.loads(text)
-                                        if isinstance(j, dict):
-                                            html_output = j.get('result') or j.get('html') or j.get('content')
-                                            if html_output and not isinstance(html_output, str):
-                                                html_output = json.dumps(html_output)
+                                        return json.loads(cleaned)
+                                    except Exception:
+                                        return None
+                            return None
+
+                    # Instead of only using the last tool output, prefer using an LLM-based matcher
+                    # that examines all cached tool outputs in the conversation and selects the
+                    # one that best answers the user's query. If none match, ask the client to
+                    # fetch the data live from the MCP server.
+
+                    # Collect all tool outputs from the conversation into a list with their message index
+                    cached_tool_outputs = []  # list of {msg_index, name, content}
+                    for mi, msg in enumerate(conversation_messages):
+                        content = msg.get('content') if isinstance(msg.get('content'), str) else None
+                        if not content:
+                            continue
+                        header_match = re.match(r"\[TOOL OUTPUT - ([^\]]+)\]\s*(.*)$", content, re.DOTALL)
+                        if header_match:
+                            cached_tool_outputs.append({'msg_index': mi, 'name': header_match.group(1), 'content': header_match.group(2).strip()})
+                            continue
+                        # raw JSON-only user messages may also contain tool outputs
+                        stripped = content.strip()
+                        if (stripped.startswith('{') and stripped.endswith('}')) or (stripped.startswith('[') and stripped.endswith(']')):
+                            cached_tool_outputs.append({'msg_index': mi, 'name': None, 'content': stripped})
+
+                    # If the user explicitly mentioned a resource id, try a deterministic match first:
+                    requested_ids = []
+                    try:
+                        ids1 = re.findall(r"resource[_\s]*id\s*[:=]?\s*(\d+)", user_query, re.IGNORECASE)
+                        ids2 = re.findall(r"resource\s+(\d+)\b", user_query, re.IGNORECASE)
+                        for x in ids1 + ids2:
+                            try:
+                                requested_ids.append(int(x))
+                            except Exception:
+                                pass
+                    except Exception:
+                        requested_ids = []
+
+                    # Initialize selection variables to avoid UnboundLocalError in all branches
+                    # Note: do NOT reinitialize selection here — keep any deterministic
+                    # match found above. The matcher logic below will only set these
+                    # if it returns an explicit choice or requests a fetch.
+
+                    # Initialize selection variables and deterministic hit flag
+                    selected_payload = None
+                    selected_name = None
+                    deterministic_hit = False
+
+                    # Deterministic matching: for each cached output, look backward a few messages
+                    # to find the assistant tool-call JSON that produced it, then compare arguments.resource_id
+                    if requested_ids and cached_tool_outputs:
+                        for entry in reversed(cached_tool_outputs):
+                            midx = entry.get('msg_index')
+                            if midx is None:
+                                continue
+                            # look back up to 6 messages for an assistant message that contains the JSON tool call
+                            for lookback in range(1, 7):
+                                i = midx - lookback
+                                if i < 0:
+                                    break
+                                mmsg = conversation_messages[i]
+                                mcontent = mmsg.get('content') if isinstance(mmsg.get('content'), str) else None
+                                if not mcontent:
+                                    continue
+                                # find fenced JSON blocks or inline JSON
+                                m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", mcontent, re.IGNORECASE)
+                                parsed_call = None
+                                if m:
+                                    try:
+                                        parsed_call = json.loads(m.group(1))
+                                    except Exception:
+                                        parsed_call = None
+                                else:
+                                    inline = re.search(r"(\{\s*\"tool\"[\s\S]*?\})", mcontent)
+                                    if inline:
+                                        try:
+                                            parsed_call = json.loads(inline.group(1))
+                                        except Exception:
+                                            parsed_call = None
+                                if not parsed_call or not isinstance(parsed_call, dict):
+                                    continue
+                                args = parsed_call.get('arguments', {}) or {}
+                                rid = args.get('resource_id') or args.get('resourceId') or args.get('resource')
+                                try:
+                                    if isinstance(rid, str) and rid.isdigit():
+                                        rid = int(rid)
+                                except Exception:
+                                    pass
+                                if isinstance(rid, int) and rid in requested_ids:
+                                    # deterministic hit
+                                    selected_name = entry.get('name')
+                                    selected_payload = entry.get('content')
+                                    deterministic_hit = True
+                                    break
+                            if selected_payload:
+                                break
+
+                    # If deterministic match found, skip the LLM matcher and use the selected payload.
+                    # The assistant should return a JSON object exactly in one of these forms:
+                    # {"match_index": N}  -> use cached_tool_outputs[N]
+                    # {"fetch": {"tool": "get_resource_allocation_planned_actual", "arguments": { ... } }} -> client will fetch
+                    # {"none": true} -> no suitable data found and no fetch requested
+                    # If no deterministic match was found above, ask the matcher LLM to pick
+                    matcher_json = None
+                    if not deterministic_hit:
+                        matcher_request = {
+                            'user_query': user_query,
+                            'cached_count': len(cached_tool_outputs),
+                        }
+
+                        matcher_prompt = (
+                            "You are a small helper that chooses whether a user's chart request can be satisfied from cached tool outputs.\n"
+                            "Input: a user query and a numbered list (0..N-1) of cached tool outputs (each is JSON or text).\n"
+                            "Task: If one of the cached tool outputs contains the data needed to fulfill the user's query, return exactly {\"match_index\": <index>} where <index> is the zero-based index into the list.\n"
+                            "If none of the cached outputs are suitable, return exactly {\"fetch\": {\"tool\": \"get_resource_allocation_planned_actual\", \"arguments\": {\"resource_id\": <id>, \"start_date\": \"YYYY-MM-DD\", \"end_date\": \"YYYY-MM-DD\", \"interval\": \"Monthly\"}}} when the query appears to request resource allocation data for a specific resource, choosing sensible dates (default to current year) and a single resource id inferred from the query.\n"
+                            "If unsure and no fetch should be made, return exactly {\"none\": true}.\n"
+                            "Return only JSON in one of the three forms above, with no extra text.\n"
+                        )
+
+                        # prepare the list items for the prompt (truncate items to avoid blowing tokens)
+                        preview_items = []
+                        for i, item in enumerate(cached_tool_outputs):
+                            c = item.get('content') or ''
+                            preview = c[:1000].replace('\n', '\\n')
+                            preview_items.append(f"{i}: {preview}")
+
+                        full_prompt = matcher_prompt + "\nUser query:\n" + user_query + "\n\nCached tool outputs (index: preview):\n" + "\n".join(preview_items)
+
+                        # Call Claude synchronously (small production call) to get the match instruction
+                        matcher_response_text = None
+                        try:
+                            mresp = claude.messages.create(model=CLAUDE_MODEL, max_tokens=300, system=system_text, messages=[{"role": "user", "content": full_prompt}])
+                            matcher_response_text = getattr(mresp, 'content')[0].text if mresp is not None else None
+                        except Exception as e:
+                            print('Matcher LLM call failed, falling back to last-tool behavior:', e)
+                            matcher_response_text = None
+
+                        # Helper to parse JSON from the matcher response
+                        def parse_json_response(text: str):
+                            if not text:
+                                return None
+                            # try direct parse or fenced JSON
+                            try:
+                                return json.loads(text)
+                            except Exception:
+                                m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+                                if m:
+                                    try:
+                                        return json.loads(m.group(1))
                                     except Exception:
                                         pass
-                        except Exception as e:
-                            # Be quiet about adapter failure but emit a short message for diagnostics
-                            print("HTTP adapter call failed (will fallback to local renderer):", str(e))
+                                # extract first {...}
+                                start = text.find('{')
+                                end = text.rfind('}')
+                                if start != -1 and end != -1 and end > start:
+                                    try:
+                                        return json.loads(text[start:end+1])
+                                    except Exception:
+                                        pass
+                            return None
 
-                    # If spawnable produced HTML, try to save it first
-                    if html_output:
-                        saved = save_html_response_if_needed(html_output, user_query, prefix="auto_chart")
+                        matcher_json = parse_json_response(matcher_response_text) if matcher_response_text else None
+
+                    # Do not reinitialize selected_payload/selected_name here — deterministic hit
+                    # may have already populated them above.
+                    # If the matcher returned a match_index, use that cached payload
+                    if matcher_json and isinstance(matcher_json, dict) and 'match_index' in matcher_json:
+                        idx = int(matcher_json.get('match_index'))
+                        if 0 <= idx < len(cached_tool_outputs):
+                            selected_name = cached_tool_outputs[idx].get('name')
+                            selected_payload = cached_tool_outputs[idx].get('content')
+
+                    # If matcher asked to fetch, call the MCP tool
+                    elif matcher_json and isinstance(matcher_json, dict) and 'fetch' in matcher_json:
+                        fetch = matcher_json.get('fetch') or {}
+                        tool_to_call = fetch.get('tool')
+                        args = fetch.get('arguments', {}) or {}
+                        try:
+                            print(f"➡️ Matcher requested fetch: {tool_to_call} {args}")
+                            tool_result = await session.call_tool(tool_to_call, args)
+                            # normalize tool_result into a string payload
+                            try:
+                                if hasattr(tool_result, 'structuredContent') and tool_result.structuredContent:
+                                    result_content = json.dumps(tool_result.structuredContent, default=str)
+                                elif hasattr(tool_result, 'content') and tool_result.content is not None:
+                                    content = tool_result.content
+                                    if isinstance(content, list):
+                                        parts = [getattr(p, 'text', p) for p in content]
+                                        if len(parts) == 1 and isinstance(parts[0], str):
+                                            try:
+                                                parsed_payload = json.loads(parts[0])
+                                                result_content = json.dumps(parsed_payload, default=str)
+                                            except Exception:
+                                                result_content = parts[0]
+                                        else:
+                                            try:
+                                                result_content = json.dumps(parts, default=str)
+                                            except Exception:
+                                                result_content = "\n".join(str(p) for p in parts)
+                                    else:
+                                        if isinstance(content, (dict, list)):
+                                            result_content = json.dumps(content, default=str)
+                                        else:
+                                            result_content = str(content)
+                                else:
+                                    try:
+                                        result_content = json.dumps(tool_result, default=str)
+                                    except Exception:
+                                        result_content = str(tool_result)
+                            except Exception:
+                                result_content = None
+                            if result_content:
+                                # append tool output into conversation and use it
+                                conversation_messages.append({"role": "user", "content": f"[TOOL OUTPUT - {tool_to_call}]\n{result_content}"})
+                                if len(conversation_messages) > MEMORY_MAX_MESSAGES:
+                                    conversation_messages = conversation_messages[-MEMORY_MAX_MESSAGES:]
+                                set_chat_memory(chat_id, conversation_messages)
+                                selected_name = tool_to_call
+                                selected_payload = result_content
+                        except Exception as e:
+                            print('Live fetch failed:', e)
+
+                    # If matcher didn't return anything usable, fall back to using the most recent cached payload
+                    if not selected_payload and cached_tool_outputs:
+                        selected_name = cached_tool_outputs[-1].get('name')
+                        selected_payload = cached_tool_outputs[-1].get('content')
+
+                    if not selected_payload:
+                        return None
+
+                    dataset_obj = parse_tool_payload(selected_payload)
+                    # Fallback: if payload looks like an HTML fragment containing a <script id='chart-data'> JSON, extract it
+                    if not dataset_obj and isinstance(selected_payload, str):
+                        mscript = re.search(r"<script[^>]*id=['\"]chart-data['\"][^>]*>([\s\S]*?)</script>", selected_payload, re.IGNORECASE)
+                        if mscript:
+                            inner = mscript.group(1).strip()
+                            try:
+                                dataset_obj = json.loads(inner)
+                            except Exception:
+                                try:
+                                    cleaned = re.sub(r',\s*(?=[\]}])', '', inner)
+                                    dataset_obj = json.loads(cleaned)
+                                except Exception:
+                                    dataset_obj = None
+
+                    if not dataset_obj:
+                        # Helpful debug message to aid tracing why no dataset was forwarded
+                        print('No parsable dataset found in selected payload. Sample preview:')
+                        try:
+                            preview = (selected_payload or '')[:1000]
+                            print(preview)
+                        except Exception:
+                            print('[unable to preview selected_payload]')
+                        return None
+
+                    # Delegate to the centralized D3 MCP server (rendering centralized). If server fails,
+                    # we'll fall back to local behavior later.
                         # Quick validation: ensure embedded chart-data exists and is non-empty
                         def html_has_embedded_data(html_text: str) -> bool:
                             if '<script id="chart-data"' in html_text:
@@ -444,336 +710,151 @@ async def run(query: str, chat_id: str = "default"):
                         if saved and html_has_embedded_data(html_output):
                             print("✅ Auto-generated chart saved to:", saved)
                             conversation_messages.append({"role": "assistant", "content": f"[HTML_SAVED] {saved}"})
-                            chat_memories[chat_id] = conversation_messages[-MEMORY_MAX_MESSAGES:]
+                            set_chat_memory(chat_id, conversation_messages)
                             return f"HTML_SAVED:{saved}"
                         # If HTML exists but has no embedded data, fall through to local renderer
 
-                    # If spawnable failed or produced HTML without embedded data, build our own HTML from dataset_obj
-                    def render_chart_html_from_dataset(data_obj, title_text: str = "Chart", user_query: str = None) -> str:
-                        """Normalized renderer: default to line charts for time-series and fall back to grouped bars when the data clearly indicates per-project planned/actual values.
+                    # If spawnable failed or produced HTML without embedded data, prefer forwarding the dataset
+                    # to the centralized D3 MCP server. If that fails, fall back to the HTTP adapter/local renderer.
+                    try:
+                        # Detect explicit user request for pie/donut and pass hint to server
+                        chart_hint = None
+                        if user_query and re.search(r'\b(donut|doughnut)\b', user_query, re.IGNORECASE):
+                            chart_hint = 'donut'
+                        elif user_query and re.search(r'\b(pie)\b', user_query, re.IGNORECASE):
+                            chart_hint = 'pie'
 
-                        Returns full HTML string embedding JSON in <script id="chart-data"> and initializing Chart.js UMD.
-                        """
-                        # Normalize records
-                        records = []
-                        if isinstance(data_obj, dict) and 'result' in data_obj:
-                            records = data_obj.get('result') or []
-                        elif isinstance(data_obj, list):
-                            records = data_obj
-                        elif isinstance(data_obj, dict):
-                            # try to find inner list
-                            for v in data_obj.values():
-                                if isinstance(v, list):
-                                    records = v
-                                    break
-                        records = [r for r in records if isinstance(r, dict)]
-
-                        # Heuristics
-                        label_field = None
-                        numeric_fields = []
-                        name_field = None
-                        if records:
-                            sample = records[0]
-                            for k in sample.keys():
-                                lk = k.lower()
-                                if any(x in lk for x in ("month", "date", "week", "period", "time")):
-                                    label_field = k
-                                    break
-                            for k in sample.keys():
-                                lk = k.lower()
-                                if any(x in lk for x in ("project", "name", "title", "project_name")) and isinstance(sample.get(k), str):
-                                    name_field = k
-                                    break
-                            # gather numeric fields
-                            for k, v in sample.items():
-                                if k == label_field:
-                                    continue
-                                lk = k.lower()
-                                if any(sub in lk for sub in ("cumul", "cumulative", "running_total", "total")):
-                                    continue
-                                if isinstance(v, (int, float)):
-                                    numeric_fields.append(k)
-
-                        # Build datasets
-                        labels = []
-                        datasets = []
-                        chart_type = 'line'
-
-                        # Project-mode grouped bars if we have a project/name label and planned/actual-like numeric fields
-                        planned_keys = []
-                        actual_keys = []
-                        if records and name_field:
-                            for k in records[0].keys():
-                                lk = k.lower()
-                                if re.search(r'planned|plan|budget', lk):
-                                    planned_keys.append(k)
-                                if re.search(r'actual|spent|spent_amount|cost|expense', lk):
-                                    actual_keys.append(k)
-                            if planned_keys or actual_keys:
-                                chart_type = 'bar'
-                                labels = [str(r.get(name_field, '')) for r in records]
-                                def extract_vals(keys):
-                                    vals = []
-                                    for r in records:
-                                        v = None
-                                        for k in keys:
-                                            if k in r and r.get(k) not in (None, ''):
-                                                v = r.get(k)
-                                                break
-                                        try:
-                                            vals.append(float(v) if v is not None else 0.0)
-                                        except Exception:
-                                            vals.append(0.0)
-                                    return vals
-                                palette = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd"]
-                                if planned_keys:
-                                    datasets.append({"label": "Planned", "data": extract_vals(planned_keys), "backgroundColor": palette[0], "borderColor": palette[0]})
-                                if actual_keys:
-                                    datasets.append({"label": "Actual", "data": extract_vals(actual_keys), "backgroundColor": palette[1], "borderColor": palette[1]})
-                                # if no planned/actual but there are numeric_fields, include each numeric as a dataset
-                                if not datasets and numeric_fields:
-                                    for idx, f in enumerate(numeric_fields):
-                                        vals = []
-                                        for r in records:
-                                            try:
-                                                vals.append(float(r.get(f, 0) if r.get(f) is not None else 0))
-                                            except Exception:
-                                                vals.append(0)
-                                        color = palette[idx % len(palette)]
-                                        datasets.append({"label": f, "data": vals, "backgroundColor": color, "borderColor": color})
-
-                        # Pie/doughnut detection: single numeric field per categorical label -> render a pie
-                        if chart_type == 'line' and records:
-                            def _is_time_like(key):
-                                return key and any(x in key.lower() for x in ("month", "date", "week", "period", "time"))
-
-                            # Choose category field: prefer name_field, else a non-time string key
-                            category_field = name_field or label_field
-                            if not category_field:
-                                for k, v in records[0].items():
-                                    if isinstance(v, str) and not _is_time_like(k):
-                                        category_field = k
-                                        break
-
-                            # Identify numeric fields present in the sample (exclude the chosen category)
-                            candidate_numeric_fields = []
-                            if category_field:
-                                for k, v in records[0].items():
-                                    if k == category_field:
-                                        continue
-                                    try:
-                                        if isinstance(v, (int, float)):
-                                            candidate_numeric_fields.append(k)
-                                        elif isinstance(v, str) and re.match(r'^[\d,\.\-\s]+$', v.strip()):
-                                            candidate_numeric_fields.append(k)
-                                    except Exception:
-                                        pass
-
-                                # If exactly one numeric field present, render pie chart
-                                if len(candidate_numeric_fields) == 1:
-                                    num_key = candidate_numeric_fields[0]
-                                    chart_type = 'pie'
-                                    labels = [str(r.get(category_field, '')) for r in records]
-                                    vals = []
-                                    for r in records:
-                                        try:
-                                            raw = r.get(num_key, 0)
-                                            if raw is None:
-                                                raw = 0
-                                            vals.append(float(re.sub(r'[^0-9.\-]', '', str(raw)) or 0))
-                                        except Exception:
-                                            vals.append(0)
-                                    # Per-segment colors
-                                    palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-                                    bg_colors = [palette[i % len(palette)] for i in range(len(labels))]
-                                    datasets.append({"label": num_key, "data": vals, "backgroundColor": bg_colors, "borderColor": bg_colors})
-
-                        # Honor explicit user request for pie/doughnut charts or convert single-dataset bars into a pie
+                        # The D3 MCP server expects a tool-like object; forward the payload and include chart_type hint
+                        # Debug: show what will be forwarded to D3 MCP
                         try:
-                            if user_query and re.search(r'\b(pie|donut|doughnut)\b', user_query, re.IGNORECASE):
-                                # choose doughnut if requested explicitly
-                                desired = 'doughnut' if re.search(r'\b(donut|doughnut)\b', user_query, re.IGNORECASE) else 'pie'
-                                # If we already have multiple datasets (e.g., grouped bars), collapse to single totals or pick a sensible one
-                                if datasets and len(datasets) > 1:
-                                    # prefer a dataset labeled 'Planned' or 'Total' if present
-                                    chosen = None
-                                    for ds in datasets:
-                                        if isinstance(ds.get('label', ''), str) and re.search(r'planned|plan|total', ds['label'], re.IGNORECASE):
-                                            chosen = ds
-                                            break
-                                    if not chosen:
-                                        # sum across datasets to create totals per label
-                                        sums = [0 for _ in labels]
-                                        for ds in datasets:
-                                            for i, v in enumerate(ds.get('data', [])):
-                                                try:
-                                                    sums[i] += float(v or 0)
-                                                except Exception:
-                                                    pass
-                                        palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-                                        bg_colors = [palette[i % len(palette)] for i in range(len(labels))]
-                                        datasets = [{"label": "Total", "data": sums, "backgroundColor": bg_colors, "borderColor": bg_colors}]
-                                    else:
-                                        data = chosen.get('data', [])
-                                        bg = chosen.get('backgroundColor', chosen.get('borderColor'))
-                                        if not isinstance(bg, list):
-                                            palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-                                            bg_colors = [palette[i % len(palette)] for i in range(len(labels))]
-                                        else:
-                                            bg_colors = bg
-                                        datasets = [{"label": chosen.get('label', 'Value'), "data": data, "backgroundColor": bg_colors, "borderColor": bg_colors}]
-                                # If we have a single dataset already but it's a bar, convert to pie/doughnut
-                                elif datasets and len(datasets) == 1:
-                                    # ensure backgroundColor is per-segment array
-                                    ds = datasets[0]
-                                    if not isinstance(ds.get('backgroundColor'), list):
-                                        palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-                                        bg_colors = [palette[i % len(palette)] for i in range(len(labels))]
-                                    else:
-                                        bg_colors = ds.get('backgroundColor')
-                                    datasets = [{"label": ds.get('label', 'Value'), "data": ds.get('data', []), "backgroundColor": bg_colors, "borderColor": bg_colors}]
-                                chart_type = desired
+                            preview = None
+                            if isinstance(dataset_obj, (dict, list)):
+                                preview = json.dumps(dataset_obj)[:1000]
+                            else:
+                                preview = str(dataset_obj)[:1000]
                         except Exception:
-                            pass
+                            preview = '<unserializable dataset>'
+                        print('Forwarding to D3 MCP. chart_hint=', chart_hint, 'dataset preview=', preview)
 
-                        # Time-series / multi-line fallback
-                        if chart_type == 'line':
-                            if records:
-                                for r in records:
-                                    labels.append(str(r.get(label_field)) if label_field and label_field in r else '')
-                                # if numeric_fields empty, attempt to infer any numeric columns across records
-                                if not numeric_fields and records:
-                                    sample = records[0]
+                        # Normalize wrapper shapes like {"result": [...]} -> use the inner list
+                        data_to_forward = dataset_obj
+                        if isinstance(dataset_obj, dict) and 'result' in dataset_obj and isinstance(dataset_obj['result'], list):
+                            data_to_forward = dataset_obj['result']
+                        # Also unwrap single-key dicts where the value is a list (common wrapper)
+                        if isinstance(data_to_forward, dict):
+                            # try to find any list value to use if labels/datasets not present
+                            list_vals = [v for v in data_to_forward.values() if isinstance(v, list) and v]
+                            if list_vals:
+                                data_to_forward = list_vals[0]
+
+                        # If we have a list of records, try to synthesize {labels, datasets} for Chart.js
+                        synthesized = None
+                        if isinstance(data_to_forward, list) and data_to_forward:
+                            # detect label and value fields heuristically
+                            sample = data_to_forward[0]
+                            if isinstance(sample, dict):
+                                # possible label keys and cost keys
+                                label_keys = ['project_name', 'name', 'project', 'title']
+                                value_keys = ['project_resource_cost_planned', 'planned_cost', 'total_planned_cost', 'cost', 'project_cost_planned']
+                                found_label = None
+                                found_value = None
+                                for k in label_keys:
+                                    if k in sample:
+                                        found_label = k
+                                        break
+                                for k in value_keys:
+                                    if k in sample:
+                                        found_value = k
+                                        break
+                                # fallback: choose first string-like key for labels and first numeric key for values
+                                if not found_label:
                                     for k, v in sample.items():
-                                        if k == label_field:
-                                            continue
-                                        try:
-                                            vals = [float(rr.get(k, 0) or 0) for rr in records]
-                                            if any(vv != 0 for vv in vals):
-                                                numeric_fields.append(k)
-                                        except Exception:
-                                            pass
-                                palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
-                                for idx, f in enumerate(numeric_fields):
-                                    vals = []
-                                    for r in records:
-                                        try:
-                                            v = r.get(f, None)
-                                            vals.append(float(v) if v is not None else None)
-                                        except Exception:
-                                            vals.append(None)
-                                    color = palette[idx % len(palette)]
-                                    datasets.append({"label": f, "data": vals, "borderColor": color, "backgroundColor": color, "fill": False})
+                                        if isinstance(v, str) and k.lower().find('name') >= 0:
+                                            found_label = k
+                                            break
+                                if not found_value:
+                                    for k, v in sample.items():
+                                        if isinstance(v, (int, float)):
+                                            found_value = k
+                                            break
 
-                        # If still no datasets, create a tiny placeholder to avoid empty-chart errors
-                        if not datasets:
-                            labels = labels or ["x"]
-                            datasets = [{"label": "value", "data": [0 for _ in labels], "borderColor": "#777", "backgroundColor": "#bbb"}]
+                                if found_label and found_value:
+                                    labels = []
+                                    values = []
+                                    for rec in data_to_forward:
+                                        lbl = rec.get(found_label) if isinstance(rec, dict) else str(rec)
+                                        val = rec.get(found_value) if isinstance(rec, dict) else None
+                                        # coerce numeric strings to numbers
+                                        if isinstance(val, str):
+                                            try:
+                                                val = float(re.sub(r'[^0-9.\-]', '', val))
+                                            except Exception:
+                                                val = 0.0
+                                        if val is None:
+                                            try:
+                                                # try nested lookup like rec['fields']['project_resource_cost_planned']
+                                                val = float(re.sub(r'[^0-9.\-]', '', str(rec.get(found_value, 0))))
+                                            except Exception:
+                                                val = 0.0
+                                        labels.append(str(lbl))
+                                        values.append(float(val or 0))
 
-                        chart_payload = {"labels": labels, "datasets": datasets}
+                                    # Provide simple colors for slices
+                                    colors = [
+                                        '#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2','#7f7f7f'
+                                    ]
+                                    bg = [colors[i % len(colors)] for i in range(len(values))]
+                                    synthesized = {
+                                        'labels': labels,
+                                        'datasets': [{
+                                            'label': 'Planned Cost',
+                                            'data': values,
+                                            'backgroundColor': bg,
+                                            'borderColor': bg,
+                                            'borderWidth': 1
+                                        }]
+                                    }
 
-                        # Unified Chart.js HTML template that adapts to chart_type
-                        template = """<!doctype html>
-<html>
-<head>
-<meta charset='utf-8'>
-<meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>__TITLE__</title>
-<script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'></script>
-<style>
-body{font-family:Segoe UI,Arial,sans-serif;margin:20px;background:#f5f5f5}
-.container{max-width:1100px;margin:0 auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,0.08)}
-.chart-wrap{position:relative;height:520px;padding:10px}
-canvas{width:100% !important;height:100% !important}
-.legend-box{background:#ffffff;border:1px solid rgba(0,0,0,0.06);padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.04);margin-top:12px;display:flex;justify-content:center}
-.legend-custom{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-.legend-item{display:flex;align-items:center;gap:10px;font-size:13px;color:#fff;padding:8px 12px;border-radius:8px;font-weight:600}
-.legend-color{width:12px;height:12px;border-radius:2px;display:inline-block;margin-right:8px}
-.info{font-size:13px;color:#666;text-align:center;margin-top:10px}
-</style>
-</head>
-<body>
-<div class='container'>
-<h2>__TITLE__</h2>
-<div class='chart-wrap'>
-<canvas id='hoursChart'></canvas>
-</div>
-<div class='legend-box' aria-hidden='false'>
-  <div id='chart-legend' class='legend-custom'></div>
-</div>
-<div class='info'>Generated from PMO data</div>
-</div>
-<script id='chart-data' type='application/json'>
-__CHART_PAYLOAD__
-</script>
-<script>
-(function(){
-  try{
-    var chartType = '__CHART_TYPE__';
-    var payload = JSON.parse(document.getElementById('chart-data').textContent || '{}');
-    payload.datasets = payload.datasets || [];
-    payload.datasets.forEach(function(ds){
-      ds.data = (ds.data || []).map(function(v){ if (v === null || v === undefined) return 0; if (typeof v === 'number') return v; var n = Number(String(v).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : 0; });
-      ds.backgroundColor = ds.backgroundColor || ds.borderColor || '#777';
-      ds.borderColor = ds.borderColor || ds.backgroundColor;
-      ds.borderWidth = ds.borderWidth != null ? ds.borderWidth : 1;
-    });
+                        # Only forward if we have something plausible to render
+                        if synthesized is not None:
+                            payload_data = synthesized
+                        else:
+                            # fallback to forwarding raw data_to_forward if it already looks chart-ready
+                            payload_data = data_to_forward
 
-    var ctx = document.getElementById('hoursChart').getContext('2d');
-    var opts = {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true } },
-      plugins: { legend: { display: false } }
-    };
-    if (chartType === 'bar') opts.scales.x = { stacked: false };
+                        # Validate payload_data quickly
+                        valid_forward = False
+                        if isinstance(payload_data, dict) and payload_data.get('labels') and payload_data.get('datasets'):
+                            valid_forward = True
+                        elif isinstance(payload_data, list) and payload_data:
+                            valid_forward = True
 
-    try{ new Chart(ctx, { type: chartType, data: payload, options: opts }); }catch(e){ console.error('Chart init error', e); }
+                        if not valid_forward:
+                            print('Not forwarding to D3 MCP because parsed dataset looks empty or invalid. payload preview:')
+                            try:
+                                print(str(payload_data)[:1000])
+                            except Exception:
+                                print('<unserializable>')
+                            return None
 
-    // build legend: for pie charts create segment-level legend, otherwise dataset totals
-    var legendEl = document.getElementById('chart-legend'); legendEl.innerHTML = '';
-    if (chartType === 'pie' || chartType === 'doughnut'){
-      var labels = payload.labels || [];
-      var ds = payload.datasets && payload.datasets[0] || { data: [], backgroundColor: [] };
-      var bg = ds.backgroundColor || [];
-      for(var i=0;i<labels.length;i++){
-        var val = (ds.data && ds.data[i]) || 0;
-        var color = Array.isArray(bg) ? (bg[i] || '#777') : (bg || '#777');
-        var item = document.createElement('div'); item.className='legend-item'; item.style.background = color;
-        var sw = document.createElement('span'); sw.className='legend-color'; sw.style.background = color; sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginRight='8px'; sw.style.borderRadius='2px';
-        var lbl = document.createElement('span'); lbl.textContent = labels[i] + ' — ' + (Number(val)||0).toLocaleString();
-        item.appendChild(sw); item.appendChild(lbl); legendEl.appendChild(item);
-      }
-    } else {
-      payload.datasets.forEach(function(ds){
-        var total = 0; for(var i=0;i<ds.data.length;i++){ var v = ds.data[i]; if(typeof v === 'number' && !isNaN(v)) total += v; }
-        var item = document.createElement('div'); item.className='legend-item'; item.style.background = ds.backgroundColor || '#777';
-        var sw = document.createElement('span'); sw.className='legend-color'; sw.style.background = (ds.backgroundColor||'#777'); sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginRight='8px'; sw.style.borderRadius='2px';
-        var lbl = document.createElement('span'); lbl.textContent = ds.label + ' — ' + total.toLocaleString();
-        item.appendChild(sw); item.appendChild(lbl); legendEl.appendChild(item);
-      });
-    }
+                        forward_payload = {"tool": "render_from_dataset", "arguments": {"title": f"Auto-generated Chart", "data": payload_data, "chart_type": chart_hint}}
+                        saved_path = forward_chart_json_to_d3(forward_payload, timeout=int(os.getenv('CHART_SPAWNABLE_TIMEOUT', '30')))
+                        if saved_path:
+                            # Copy into client html-charts with a meaningful name
+                            client_saved = move_and_open_chart(saved_path, chart_type=(chart_hint or 'chart'), query_hint='auto')
+                            final_path = client_saved or saved_path
+                            print("✅ Auto-generated chart delegated to D3 MCP and saved to:", final_path)
+                            conversation_messages.append({"role": "assistant", "content": f"[HTML_SAVED] {final_path}"})
+                            set_chat_memory(chat_id, conversation_messages)
+                            return f"HTML_SAVED:{final_path}"
+                    except Exception as e:
+                        print("D3 delegation failed, falling back to adapter/local renderer:", e)
 
-  }catch(e){ console.error('render error', e); }
-})();
-</script>
-</body>
-</html>"""
-
-                        html_out = template.replace('__TITLE__', str(title_text)).replace('__CHART_PAYLOAD__', json.dumps(chart_payload)).replace('__CHART_TYPE__', chart_type)
-                        return html_out
-
-                    html_output = render_chart_html_from_dataset(dataset_obj, title_text="Auto-generated Chart", user_query=user_query)
-                    saved = save_html_response_if_needed(html_output, user_query, prefix="auto_chart")
-                    if saved:
-                        print("✅ Auto-generated chart saved to:", saved)
-                        conversation_messages.append({"role": "assistant", "content": f"[HTML_SAVED] {saved}"})
-                        chat_memories[chat_id] = conversation_messages[-MEMORY_MAX_MESSAGES:]
-                        return f"HTML_SAVED:{saved}"
-                    return None
+                    # If D3 delegation did not succeed, continue with previous adapter-based fallback
+                    html_output = None
 
                 # If this user query appears to request a chart and we have recent tool output, try auto-generate now and return early
-                auto_generated = try_auto_generate_chart_from_last_tool_output(query)
+                auto_generated = await try_auto_generate_chart_from_last_tool_output(query)
                 if auto_generated:
                     return auto_generated
 
@@ -853,6 +934,210 @@ __CHART_PAYLOAD__
                             elif re.search(r'\bget_business_lines\b', assistant_text):
                                 parsed = {"tool": "get_business_lines", "arguments": {}}
 
+                    # If parsed JSON is a multi-step plan, execute each step sequentially
+                    if parsed and isinstance(parsed, dict) and 'plan' in parsed and isinstance(parsed.get('plan'), list):
+                        steps = parsed.get('plan')
+                        print(f"➡️ Received plan with {len(steps)} steps. Executing sequentially...")
+                        plan_results = {}
+                        for idx, step in enumerate(steps):
+                            try:
+                                tool_name = step.get('tool')
+                                tool_args = step.get('arguments', {}) or {}
+                                print(f"➡️ Plan step {idx+1}: Executing tool {tool_name} with args: {tool_args}")
+                                try:
+                                    tool_result = await session.call_tool(tool_name, tool_args)
+                                except Exception as tool_err:
+                                    print(f"Tool {tool_name} execution error in plan: {tool_err}")
+                                    tool_result = {"error": str(tool_err)}
+
+                                # Normalize tool_result into a string payload
+                                try:
+                                    if hasattr(tool_result, 'structuredContent') and tool_result.structuredContent:
+                                        result_content = json.dumps(tool_result.structuredContent, default=str)
+                                    elif hasattr(tool_result, 'content') and tool_result.content is not None:
+                                        content = tool_result.content
+                                        if isinstance(content, list):
+                                            parts = [getattr(p, 'text', p) for p in content]
+                                            if len(parts) == 1 and isinstance(parts[0], str):
+                                                try:
+                                                    parsed_payload = json.loads(parts[0])
+                                                    result_content = json.dumps(parsed_payload, default=str)
+                                                except Exception:
+                                                    result_content = parts[0]
+                                            else:
+                                                try:
+                                                    result_content = json.dumps(parts, default=str)
+                                                except Exception:
+                                                    result_content = "\n".join(str(p) for p in parts)
+                                        else:
+                                            if isinstance(content, (dict, list)):
+                                                result_content = json.dumps(content, default=str)
+                                            else:
+                                                result_content = str(content)
+                                    else:
+                                        try:
+                                            result_content = json.dumps(tool_result, default=str)
+                                        except Exception:
+                                            result_content = str(tool_result)
+                                except Exception:
+                                    result_content = str(tool_result)
+
+                                # Store and append to conversation so Claude can see step outputs
+                                plan_results_key = tool_name or f"step_{idx+1}"
+                                plan_results[plan_results_key] = result_content
+                                conversation_messages.append({"role": "user", "content": f"[TOOL OUTPUT - {tool_name}]\n{result_content}"})
+                                # Trim and persist memory after each step
+                                if len(conversation_messages) > MEMORY_MAX_MESSAGES:
+                                    conversation_messages = conversation_messages[-MEMORY_MAX_MESSAGES:]
+                                chat_memories[chat_id] = conversation_messages
+                                # If the tool output is very large, save it to disk and add a short assistant pointer
+                                try:
+                                    if isinstance(result_content, str) and len(result_content) > 4000:
+                                        outdir = Path(__file__).resolve().parent / "data-exports"
+                                        outdir.mkdir(parents=True, exist_ok=True)
+                                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                        fname = f"payload_{tool_name}_{chat_id}_{ts}.json"
+                                        fpath = outdir / fname
+                                        with open(fpath, 'w', encoding='utf-8') as _f:
+                                            _f.write(result_content)
+                                        conversation_messages.append({"role": "assistant", "content": f"[SAVED_PAYLOAD] {str(fpath)}"})
+                                        set_chat_memory(chat_id, conversation_messages)
+                                except Exception:
+                                    pass
+                            except Exception as e:
+                                print(f"Error while executing plan step {idx+1}: {e}")
+                                plan_results[f"step_{idx+1}_error"] = str(e)
+
+                        # After executing the plan, provide the aggregated outputs back to the loop for further reasoning
+                        # Try to auto-merge plan step results when they look like time-series for charting
+                        def try_merge_plan_timeseries(plan_results_dict):
+                            # plan_results_dict: {tool_name: result_content (stringified JSON or text)}
+                            # Build a list of series with explicit labels and numeric arrays
+                            all_series = []
+                            labels_union = set()
+                            for key, val in plan_results_dict.items():
+                                try:
+                                    parsed = json.loads(val) if isinstance(val, str) else val
+                                except Exception:
+                                    try:
+                                        parsed = json.loads(str(val))
+                                    except Exception:
+                                        parsed = None
+                                records = None
+                                if isinstance(parsed, dict) and 'result' in parsed and isinstance(parsed['result'], list):
+                                    records = parsed['result']
+                                elif isinstance(parsed, list):
+                                    records = parsed
+                                if not records or not isinstance(records, list):
+                                    continue
+                                # detect label and numeric keys
+                                sample = records[0] if records else {}
+                                if not isinstance(sample, dict):
+                                    continue
+                                label_key = None
+                                for k in sample.keys():
+                                    if any(x in k.lower() for x in ('month', 'date', 'period', 'time', 'week')):
+                                        label_key = k; break
+                                if not label_key:
+                                    # fallback to first string-like key
+                                    for k, v in sample.items():
+                                        if isinstance(v, str):
+                                            label_key = k; break
+                                numeric_key = None
+                                for k, v in sample.items():
+                                    if k == label_key:
+                                        continue
+                                    if isinstance(v, (int, float)) or (isinstance(v, str) and re.match(r'^[\d,\.\-\s]+$', str(v).strip())):
+                                        numeric_key = k; break
+                                if not label_key or not numeric_key:
+                                    continue
+                                series_labels = [str(r.get(label_key, '')) for r in records]
+                                series_values = []
+                                for r in records:
+                                    try:
+                                        v = r.get(numeric_key, 0)
+                                        if v is None:
+                                            v = 0
+                                        if isinstance(v, str):
+                                            v = float(re.sub(r'[^0-9.\-]', '', v) or 0)
+                                        series_values.append(float(v))
+                                    except Exception:
+                                        series_values.append(0.0)
+                                # collect
+                                all_series.append({'label': f"{key}:{numeric_key}", 'labels': series_labels, 'data': series_values})
+                                for L in series_labels:
+                                    labels_union.add(L)
+
+                            if not all_series:
+                                return None
+
+                            # sort labels: try YYYY-MM detection else lexicographic
+                            def sort_labels(lbls):
+                                try:
+                                    if all(re.match(r'^\d{4}-\d{2}$', l) for l in lbls):
+                                        return sorted(lbls)
+                                except Exception:
+                                    pass
+                                return sorted(lbls)
+
+                            unified_labels = sort_labels(list(labels_union))
+
+                            # align each series to unified labels filling missing with 0
+                            palette = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b']
+                            datasets = []
+                            for idx, s in enumerate(all_series):
+                                mapping = {l: v for l, v in zip(s['labels'], s['data'])}
+                                aligned = [float(mapping.get(L, 0) or 0) for L in unified_labels]
+                                color = palette[idx % len(palette)]
+                                datasets.append({'label': s['label'], 'data': aligned, 'borderColor': color, 'backgroundColor': color, 'fill': False})
+
+                            return {'labels': unified_labels, 'datasets': datasets}
+
+                        merged_payload = None
+                        try:
+                            merged_payload = try_merge_plan_timeseries(plan_results)
+                        except Exception as _:
+                            merged_payload = None
+
+                        if merged_payload:
+                            try:
+                                # Prefer server-side merge if available
+                                saved_path = None
+                                try:
+                                    # Attempt to call server merge_timeseries tool if the MCP server exposes it
+                                    merge_args = {'merged': merged_payload}
+                                    # some MCP servers expose merge_timeseries as a tool; prefer calling it
+                                    try:
+                                        merge_result = await session.call_tool('merge_timeseries', {'items': []})
+                                        # If we've reached here, the server supports merge_timeseries; skip local
+                                        # But we already have merged_payload so just proceed to render
+                                    except Exception:
+                                        # server doesn't support merge_timeseries or call failed; proceed with local merged_payload
+                                        pass
+                                except Exception:
+                                    pass
+
+                                forward_payload = {"tool": "render_from_dataset", "arguments": {"title": "Auto-merged Chart", "data": merged_payload, "chart_type": "line"}}
+                                saved_path = forward_chart_json_to_d3(forward_payload, timeout=int(os.getenv('CHART_SPAWNABLE_TIMEOUT', '30')))
+                                if saved_path:
+                                    # copy into client html-charts
+                                    client_saved = move_and_open_chart(saved_path, chart_type='line', query_hint='auto-merged')
+                                    final_path = client_saved or saved_path
+                                    print("✅ Plan auto-merged and chart saved to:", final_path)
+                                    conversation_messages.append({"role": "assistant", "content": f"[HTML_SAVED] {final_path}"})
+                                    set_chat_memory(chat_id, conversation_messages)
+                                    # set last_tool_output to the saved path indicator so the loop can exit or reason further
+                                    last_tool_output = json.dumps({'html_saved': final_path})
+                                else:
+                                    last_tool_output = json.dumps(plan_results)
+                            except Exception as e:
+                                print("Failed to forward merged plan payload to D3 MCP:", e)
+                                last_tool_output = json.dumps(plan_results)
+                        else:
+                            last_tool_output = json.dumps(plan_results)
+                        # continue to next iteration so Claude gets the tool outputs as user messages
+                        continue
+
                     # If parsed JSON indicates a tool invocation, execute it
                     if parsed and isinstance(parsed, dict) and 'tool' in parsed:
                         tool_name = parsed['tool']
@@ -902,7 +1187,21 @@ __CHART_PAYLOAD__
                         # Trim and persist memory after tool output
                         if len(conversation_messages) > MEMORY_MAX_MESSAGES:
                             conversation_messages = conversation_messages[-MEMORY_MAX_MESSAGES:]
-                        chat_memories[chat_id] = conversation_messages
+                        set_chat_memory(chat_id, conversation_messages)
+                        # If the tool output is very large, save it to disk and add a short assistant pointer
+                        try:
+                            if isinstance(result_content, str) and len(result_content) > 4000:
+                                outdir = Path(__file__).resolve().parent / "data-exports"
+                                outdir.mkdir(parents=True, exist_ok=True)
+                                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                fname = f"payload_{tool_name}_{chat_id}_{ts}.json"
+                                fpath = outdir / fname
+                                with open(fpath, 'w', encoding='utf-8') as _f:
+                                    _f.write(result_content)
+                                conversation_messages.append({"role": "assistant", "content": f"[SAVED_PAYLOAD] {str(fpath)}"})
+                                set_chat_memory(chat_id, conversation_messages)
+                        except Exception:
+                            pass
                         # Continue the loop to let Claude decide next action
                         continue
 
@@ -911,12 +1210,29 @@ __CHART_PAYLOAD__
                     if saved_path:
                         print("✅ Final Claude answer saved to:", saved_path)
                         conversation_messages.append({"role": "assistant", "content": f"[HTML_SAVED] {saved_path}"})
-                        chat_memories[chat_id] = conversation_messages[-MEMORY_MAX_MESSAGES:]
+                        set_chat_memory(chat_id, conversation_messages)
                         return f"HTML_SAVED:{saved_path}"
                     else:
+                        # If Claude returned an HTML page but it lacks embedded chart-data, try auto-generating
+                        # a chart by forwarding the most recent tool output(s) to the centralized D3 MCP server.
+                        is_html = bool(re.search(r"<!DOCTYPE html|<html", assistant_text, re.IGNORECASE))
+                        has_embedded = '<script id="chart-data"' in (assistant_text or '')
+                        recent_tool_output_exists = any(re.search(r"\[TOOL OUTPUT - ", m.get('content', '') or '') for m in conversation_messages)
+                        if is_html and (not has_embedded) and recent_tool_output_exists:
+                            print("Assistant returned HTML without embedded data — attempting to auto-generate chart from recent tool outputs...")
+                            try:
+                                auto_generated = try_auto_generate_chart_from_last_tool_output(query)
+                                if auto_generated:
+                                    # try_auto_generate_chart_from_last_tool_output already appends and saves
+                                    return auto_generated
+                                else:
+                                    print("Auto-generation fallback did not produce an HTML file.")
+                            except Exception as e:
+                                print("Auto-generation fallback failed:", e)
+
                         print("✅ Final Claude answer:")
                         print(assistant_text)
-                        chat_memories[chat_id] = conversation_messages[-MEMORY_MAX_MESSAGES:]
+                        set_chat_memory(chat_id, conversation_messages)
                         return assistant_text
 
                 # If we exit loop with last_tool_output, ask Claude to reason over it (final analysis)
@@ -936,22 +1252,25 @@ __CHART_PAYLOAD__
                     # If Claude produced HTML for the reasoning result, save instead of printing
                     saved_path = save_html_response_if_needed(final_text, query, prefix="claude_reasoning")
                     if saved_path:
-                        print("\n🤖 Claude reasoning result saved to:\n", saved_path)
-                        conversation_messages.append({"role": "assistant", "content": f"[HTML_SAVED] {saved_path}"})
-                        chat_memories[chat_id] = conversation_messages[-MEMORY_MAX_MESSAGES:]
-                        return f"HTML_SAVED:{saved_path}"
+                        # copy to client html-charts for consistent naming
+                        client_saved = move_and_open_chart(saved_path, chart_type='reasoning', query_hint='claude_reasoning')
+                        final_path = client_saved or saved_path
+                        print("\n🤖 Claude reasoning result saved to:\n", final_path)
+                        conversation_messages.append({"role": "assistant", "content": f"[HTML_SAVED] {final_path}"})
+                        set_chat_memory(chat_id, conversation_messages)
+                        return f"HTML_SAVED:{final_path}"
                     else:
                         print("\n🤖 Claude reasoning result:\n")
                         print(final_text)
                         # Persist final reasoning in memory and return
                         conversation_messages.append({"role": "assistant", "content": final_text})
-                        chat_memories[chat_id] = conversation_messages[-MEMORY_MAX_MESSAGES:]
+                        set_chat_memory(chat_id, conversation_messages)
                         return final_text
 
                 # If nothing produced, fallback to previous simple behavior
                 print("⚠️ No tool output produced and no final answer returned from Claude.")
                 # Persist current memory state even if no useful output
-                chat_memories[chat_id] = conversation_messages[-MEMORY_MAX_MESSAGES:]
+                set_chat_memory(chat_id, conversation_messages)
                 return None
 
     except Exception as e:
@@ -959,26 +1278,132 @@ __CHART_PAYLOAD__
         traceback.print_exc()
 
 if __name__ == "__main__":
-    print("PMO Claude REPL — type 'exit' or Ctrl-C to quit.")
-    chat_id = "default"
+    print("PMO Claude REPL — type ':exit' or Ctrl-C to quit.")
+    # Start a fresh session id per REPL run unless user chooses to load an existing one
+    session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    # sanitize to match memory_file_for rules
+    session_id = re.sub(r'[^A-Za-z0-9_.-]', '_', session_id)[:64]
+    current_chat_id = session_id
+    # allow starting with a named session via CLI
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--session', '-s', help='Start REPL with this session id (sanitized).')
+    known_args, _ = parser.parse_known_args()
+    if known_args.session:
+        chosen = re.sub(r'[^A-Za-z0-9_.-]', '_', known_args.session)[:64]
+        current_chat_id = chosen
+
+    # Ensure chat memory dir exists
+    ensure_memory_dir()
+    print(f"Session started. Session ID: {current_chat_id}")
+    print("Commands: :list-sessions  :use <id>  :show <id>  :show  :exit")
+
+    def human_size(n):
+        try:
+            n = int(n)
+        except Exception:
+            return str(n)
+        for unit in ['B','KB','MB','GB','TB']:
+            if n < 1024:
+                return f"{n}{unit}"
+            n = n/1024
+        return f"{n:.1f}TB"
+
+    def list_sessions():
+        try:
+            files = []
+            for p in CHAT_MEMORY_DIR.iterdir():
+                if p.is_file() and p.suffix == '.json':
+                    stat = p.stat()
+                    mtime = datetime.fromtimestamp(stat.st_mtime).isoformat(' ')
+                    size = human_size(stat.st_size)
+                    files.append((p.name, mtime, size))
+            return sorted(files, key=lambda t: t[0])
+        except Exception:
+            return []
+
     try:
+        # Load (or initialize) memory for this new session so subsequent runs use it
+        load_chat_memory(current_chat_id)
         while True:
             try:
-                query = input("\nWhat information can I get you from the PMO platform? ").strip()
+                raw = input(f"\n[{current_chat_id}] What information can I get you from the PMO platform? ")
             except EOFError:
-                # End-of-file (e.g., piped input ended) — exit gracefully
                 print("\nEOF received, exiting.")
                 break
+            except KeyboardInterrupt:
+                print("\nInterrupted by user.")
+                # Save and exit
+                try:
+                    set_chat_memory(current_chat_id, chat_memories.get(current_chat_id, []))
+                except Exception:
+                    pass
+                break
+
+            if raw is None:
+                continue
+            query = raw.strip()
             if not query:
                 continue
-            if query.lower() in ("exit", "quit"):
-                print("Exiting.")
-                break
+            # REPL commands prefixed with ':'
+            if query.startswith(":"):
+                parts = query[1:].split()
+                cmd = parts[0].lower() if parts else ''
+                if cmd in ('exit', 'quit'):
+                    print('Exiting.')
+                    try:
+                        set_chat_memory(current_chat_id, chat_memories.get(current_chat_id, []))
+                    except Exception:
+                        pass
+                    break
+                if cmd == 'list-sessions' or cmd == 'list':
+                    sess = list_sessions()
+                    if not sess:
+                        print('No sessions found.')
+                    else:
+                        print('Saved sessions:')
+                        for s in sess:
+                            print(' -', s)
+                    continue
+                if cmd in ('use', 'load') and len(parts) >= 2:
+                    new_id = parts[1]
+                    new_id = re.sub(r'[^A-Za-z0-9_.-]', '_', new_id)[:64]
+                    current_chat_id = new_id
+                    load_chat_memory(current_chat_id)
+                    print(f'Loaded session: {current_chat_id}')
+                    continue
+                if cmd == 'show':
+                    if len(parts) >= 2:
+                        target = re.sub(r'[^A-Za-z0-9_.-]', '_', parts[1])[:64]
+                        path = memory_file_for(target)
+                        if path.exists():
+                            try:
+                                with open(path, 'r', encoding='utf-8') as f:
+                                    data = f.read()
+                                    print(data[:4000])
+                            except Exception as e:
+                                print('Failed to read session file:', e)
+                        else:
+                            print('Session file not found:', path)
+                    else:
+                        print('Current session:', current_chat_id)
+                    continue
+                print('Unknown command:', cmd)
+                continue
+
+            # Run the main routine using the selected session id
             try:
-                # Run the main routine using the same in-process memory (chat_id)
-                asyncio.run(run(query, chat_id=chat_id))
+                asyncio.run(run(query, chat_id=current_chat_id))
             except KeyboardInterrupt:
-                print("\nInterrupted by user. Exiting.")
-                break
+                print('\nInterrupted by user during run; saving session and returning to REPL.')
+                try:
+                    set_chat_memory(current_chat_id, chat_memories.get(current_chat_id, []))
+                except Exception:
+                    pass
+                continue
+
     except KeyboardInterrupt:
-        print("\nInterrupted. Goodbye.")
+        print('\nInterrupted. Goodbye.')
+        try:
+            set_chat_memory(current_chat_id, chat_memories.get(current_chat_id, []))
+        except Exception:
+            pass

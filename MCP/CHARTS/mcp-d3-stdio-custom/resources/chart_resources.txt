@@ -1,0 +1,7 @@
+# Chart resources for local D3 MCP server
+
+# Color palettes and style guidance
+PALETTE: Tableau10
+
+# Notes: You can edit this file to provide additional snippets or CSS used by the server.
+# The server currently reads this file at startup and includes the text in diagnostic responses.
