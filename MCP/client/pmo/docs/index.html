@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PMO MCP Client - Complete Documentation</title>
+    <link rel="stylesheet" href="styles.css">    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <h1>🤖 PMO MCP Client</h1>
+            <ul class="nav-menu">
+                <li><a href="#overview" class="nav-link active">🌟 Overview</a></li>
+                <li><a href="#architecture" class="nav-link">🏗️ Architecture</a></li>
+                <li><a href="#features" class="nav-link">✨ Key Features</a></li>
+                <li><a href="#llm-providers" class="nav-link">🧠 LLM Providers</a></li>
+                <li><a href="#quickstart" class="nav-link">🚀 Quick Start</a></li>
+                <li><a href="#chat-commands" class="nav-link">💬 Commands</a></li>
+                <li><a href="#session-management" class="nav-link">💾 Sessions</a></li>
+                <li><a href="#chart-integration" class="nav-link">📊 Charts</a></li>
+                <li><a href="#data-persistence" class="nav-link">💿 Data Storage</a></li>
+                <li><a href="#examples" class="nav-link">📋 Examples</a></li>
+                <li><a href="#troubleshooting" class="nav-link">🛠️ Troubleshooting</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>🤖 PMO MCP Client</h1>
+                <p>Unified Multi-Provider LLM Client for PMO Operations</p>
+            </div>
+
+            <!-- Overview Section -->
+            <section id="overview" class="section active">
+                <h2>🌟 Overview</h2>
+                
+                <div class="card">
+                    <h3>What is the PMO MCP Client?</h3>
+                    <p>The PMO MCP Client (<code>pmo_mcp_client.py</code>) is an intelligent, production-ready LLM client that provides a unified interface to multiple AI providers while seamlessly integrating with the PMO MCP Server and D3 Chart MCP Server. It enables natural language interactions with your PMO data and automatic visualization generation.</p>
+                    
+                    <div class="alert success">
+                        <strong>🚀 Key Innovation:</strong> One client, four LLM providers (Anthropic Claude, AWS Bedrock, OpenAI GPT, Google Gemini), automatic MCP server orchestration, persistent conversation sessions, and intelligent chart generation!
+                    </div>
+                </div>
+
+                <h3>Core Capabilities</h3>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">🧠</div>
+                        <h4>Unified LLM Interface</h4>
+                        <p>Single codebase supporting Anthropic, Bedrock, OpenAI, and Gemini with runtime provider switching</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔌</div>
+                        <h4>Dual MCP Integration</h4>
+                        <p>Connects to PMO Server (16 tools) and D3 Chart Server for comprehensive project management</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">💾</div>
+                        <h4>Session Persistence</h4>
+                        <p>Automatic conversation history saved to JSON files with 200-message limit per session</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📊</div>
+                        <h4>Smart Charting</h4>
+                        <p>Automatic Chart.js visualization from PMO data, saved to <code>html-charts/</code></p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔄</div>
+                        <h4>Multi-Step Plans</h4>
+                        <p>LLM executes sequential tool calls with aggregated results for complex queries</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">💿</div>
+                        <h4>Data Export</h4>
+                        <p>Automatically saves tool outputs >4KB to <code>data-exports/</code> directory</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Architecture Section -->
+            <section id="architecture" class="section">
+                <h2>🏗️ Architecture</h2>
+
+                <div class="card">
+                    <h3>Client Architecture</h3>
+                    <p>The PMO MCP Client follows a modular, layered architecture:</p>
+                    
+                    <div style="background: #f8f9fa; padding: 2rem; border-radius: 10px; margin: 1rem 0;">
+                        <div style="text-align: center; margin-bottom: 1.5rem;">
+                            <div style="background: #34495e; color: white; padding: 1.5rem; border-radius: 10px; display: inline-block; min-width: 300px;">
+                                <strong>👤 User Interface Layer</strong><br>
+                                <span style="font-size: 0.9rem;">Interactive REPL • Command Processing</span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; font-size: 2rem; color: #e74c3c;">↓</div>
+                        
+                        <div style="text-align: center; margin: 1.5rem 0;">
+                            <div style="background: #e74c3c; color: white; padding: 1.5rem; border-radius: 10px; display: inline-block; min-width: 300px;">
+                                <strong>🤖 Unified LLM Client Layer</strong><br>
+                                <span style="font-size: 0.9rem;">Provider Abstraction • Request Routing</span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; font-size: 2rem; color: #e74c3c;">↓</div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin: 1.5rem 0;">
+                            <div style="background: #9b59b6; color: white; padding: 1rem; border-radius: 8px; text-align: center;">
+                                <strong>🧠 Anthropic</strong><br>
+                                <span style="font-size: 0.8rem;">Claude API</span>
+                            </div>
+                            <div style="background: #3498db; color: white; padding: 1rem; border-radius: 8px; text-align: center;">
+                                <strong>☁️ Bedrock</strong><br>
+                                <span style="font-size: 0.8rem;">AWS SDK</span>
+                            </div>
+                            <div style="background: #27ae60; color: white; padding: 1rem; border-radius: 8px; text-align: center;">
+                                <strong>🤖 OpenAI</strong><br>
+                                <span style="font-size: 0.8rem;">GPT API</span>
+                            </div>
+                            <div style="background: #f39c12; color: white; padding: 1rem; border-radius: 8px; text-align: center;">
+                                <strong>💎 Gemini</strong><br>
+                                <span style="font-size: 0.8rem;">Google API</span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; font-size: 2rem; color: #e74c3c;">↓</div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 2rem;">
+                            <div style="background: #8e44ad; color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
+                                <strong>🏢 PMO MCP Server</strong><br>
+                                <span style="font-size: 0.9rem;">Project & Resource Tools</span>
+                            </div>
+                            <div style="background: #e67e22; color: white; padding: 1.5rem; border-radius: 8px; text-align: center;">
+                                <strong>📊 D3 Chart MCP</strong><br>
+                                <span style="font-size: 0.9rem;">Chart Generation</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>Key Components</h3>
+                <div class="card">
+                    <h4>1. Unified LLM Client (<code>UnifiedLLMClient</code>)</h4>
+                    <p>Abstract base class with provider-specific implementations:</p>
+                    <ul style="margin-left: 2rem; margin-top: 0.5rem;">
+                        <li><code>AnthropicClient</code> - Direct Anthropic API integration</li>
+                        <li><code>BedrockClient</code> - AWS Bedrock with SigV4 authentication</li>
+                        <li><code>OpenAIClient</code> - OpenAI/Azure OpenAI integration</li>
+                        <li><code>GeminiClient</code> - Google Gemini integration</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>2. Session Manager</h4>
+                    <p>Handles conversation persistence:</p>
+                    <ul style="margin-left: 2rem; margin-top: 0.5rem;">
+                        <li><code>load_chat_memory()</code> - Load persisted sessions from JSON</li>
+                        <li><code>save_chat_memory()</code> - Atomic save with fsync</li>
+                        <li><code>set_chat_memory()</code> - Update and persist session</li>
+                        <li>200-message limit with automatic trimming</li>
+                        <li>Sessions stored in <code>chat_memory/</code> directory</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>3. Chart Integration</h4>
+                    <p>Automatic chart generation pipeline:</p>
+                    <ul style="margin-left: 2rem; margin-top: 0.5rem;">
+                        <li><code>forward_chart_json_to_d3_mcp()</code> - Connect to D3 MCP server</li>
+                        <li><code>create_simple_local_chart()</code> - Fallback Chart.js generation</li>
+                        <li><code>move_and_open_chart()</code> - Save to client directory and auto-open</li>
+                        <li>Chart.js data transformation for resource allocation data</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Features Section -->
+            <section id="features" class="section">
+                <h2>✨ Key Features</h2>
+
+                <div class="card">
+                    <h3>1. Multi-Step Query Execution</h3>
+                    <p>The client supports complex multi-step plans where the LLM can orchestrate multiple MCP tool calls:</p>
+                    
+                    <div class="code-block">
+# LLM returns a plan JSON:
+{
+  "plan": [
+    {
+      "id": "s1",
+      "tool": "get_resource_capacity_allocation",
+      "arguments": {"resource_id": 1, "start_date": "2025-01-01", ...}
+    },
+    {
+      "id": "s2", 
+      "tool": "get_resource_capacity_allocation",
+      "arguments": {"resource_id": 2, "start_date": "2025-01-01", ...}
+    }
+  ]
+}
+
+# Client executes steps sequentially
+# Appends each result as [TOOL OUTPUT - s1], [TOOL OUTPUT - s2]
+# LLM receives all outputs and synthesizes final answer
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>2. Intelligent Data Caching</h3>
+                    <p>The client implements smart data reuse to minimize redundant MCP calls:</p>
+                    <ul style="margin-left: 2rem; margin-top: 0.5rem;">
+                        <li><strong>Conversation History Check:</strong> Before making tool calls, LLM checks if required data exists in conversation history</li>
+                        <li><strong>Deterministic Matching:</strong> For resource ID queries, client automatically matches cached tool outputs</li>
+                        <li><strong>LLM-Based Matcher:</strong> Sends query + cached outputs to LLM to determine if new fetch is needed</li>
+                        <li><strong>Large Data Export:</strong> Tool outputs >4KB automatically saved to <code>data-exports/</code> with reference in conversation</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>3. UTF-8 and Unicode Handling</h3>
+                    <p>Robust handling of international characters and emojis:</p>
+                    <ul style="margin-left: 2rem; margin-top: 0.5rem;">
+                        <li>Sets <code>PYTHONIOENCODING=utf-8</code> on Windows</li>
+                        <li>Configures locale for UTF-8 support</li>
+                        <li>Replaces problematic emojis with text markers (🔍 → [search])</li>
+                        <li>Fallback ASCII encoding for problematic characters</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>4. Chart Data Transformation</h3>
+                    <p>Automatic transformation of PMO data to Chart.js format:</p>
+                    <ul style="margin-left: 2rem; margin-top: 0.5rem;">
+                        <li><strong>Resource Allocation:</strong> Converts capacity data to multi-series line charts</li>
+                        <li><strong>Time Period Labels:</strong> Intelligent date formatting (monthly, quarterly)</li>
+                        <li><strong>Project Allocation Details:</strong> Grouped bar charts with project-level breakdowns</li>
+                        <li><strong>Donut/Pie Charts:</strong> Project cost distribution from tabular data</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- LLM Providers Section -->
+            <section id="llm-providers" class="section">
+                <h2>🧠 LLM Providers</h2>
+
+                <div class="card">
+                    <h3>Supported Providers</h3>
+                    <p>The client supports four major LLM providers with seamless switching:</p>
+                </div>
+
+                <div class="card">
+                    <h4>1. AWS Bedrock (Default)</h4>
+                    <div class="badge info">Default Provider</div>
+                    <p><strong>Configuration:</strong></p>
+                    <div class="code-block">
+BEDROCK_MODEL=anthropic.claude-sonnet-4
+AWS_REGION=us-east-1
+BEDROCK_ANTHROPIC_VERSION=20250514
+                    </div>
+                    <p><strong>Features:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>Uses AWS SDK with SigV4 authentication</li>
+                        <li>Supports <code>converse()</code> API for Claude models</li>
+                        <li>Fallback to <code>invoke_model()</code> for compatibility</li>
+                        <li>HTTP endpoint support with API key or SigV4</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>2. Anthropic Claude</h4>
+                    <div class="badge success">Direct API</div>
+                    <p><strong>Configuration:</strong></p>
+                    <div class="code-block">
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-3-sonnet-20240229
+                    </div>
+                    <p><strong>Features:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>Direct Anthropic API integration</li>
+                        <li>Full message API support</li>
+                        <li>System message support</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>3. OpenAI GPT</h4>
+                    <div class="badge warning">Chat API</div>
+                    <p><strong>Configuration:</strong></p>
+                    <div class="code-block">
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4
+OPENAI_BASE_URL=https://api.openai.com/v1  # Optional for Azure
+                    </div>
+                    <p><strong>Features:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>OpenAI Chat Completion API</li>
+                        <li>Azure OpenAI support via <code>OPENAI_BASE_URL</code></li>
+                        <li>Streaming disabled for consistency</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>4. Google Gemini</h4>
+                    <div class="badge danger">Generative AI</div>
+                    <p><strong>Configuration:</strong></p>
+                    <div class="code-block">
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-pro
+                    </div>
+                    <p><strong>Features:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>Google Generative AI SDK</li>
+                        <li>Text generation with <code>generate_content()</code></li>
+                        <li>Message format conversion for Gemini API</li>
+                    </ul>
+                </div>
+
+                <div class="alert info">
+                    <strong>💡 Switching Providers:</strong> Use the <code>:provider &lt;name&gt;</code> command during runtime to switch between anthropic, bedrock, openai, or gemini without restarting the client!
+                </div>
+            </section>
+
+            <!-- Quick Start Section -->
+            <section id="quickstart" class="section">
+                <h2>🚀 Quick Start</h2>
+
+                <div class="card">
+                    <h3>Installation</h3>
+                    <div class="code-block">
+# Navigate to client directory
+cd D:\GenAI\MCP\client\pmo
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment (.env file)
+BEDROCK_MODEL=anthropic.claude-sonnet-4
+AWS_REGION=us-east-1
+# Or configure other providers (see LLM Providers section)
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Running the Client</h3>
+                    <div class="code-block">
+# Start with default session
+python pmo_mcp_client.py
+
+# Start with named session
+python pmo_mcp_client.py --session my_analysis
+
+# Client displays:
+Running with BEDROCK as the unified LLM client
+Session started. Session ID: session_20251028_143052_a3b4c5
+Commands: :list-sessions  :use &lt;id&gt;  :show  :provider  :chart  :exit
+[session_20251028_143052_a3b4c5|bedrock] Query:
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>First Query Example</h3>
+                    <div class="code-block">
+[session_xxx|bedrock] Query: List all active projects in Market & Sell portfolio
+
+Connecting to PMO MCP server...
+MCP session ready
+Available tools: 16 tools loaded
+💭 BEDROCK: JSON tool call received
+🔧 Executing: get_projects_by_portfolio_and_product_line
+   ✅ Tool completed successfully
+[TOOL OUTPUT - get_projects_by_portfolio_and_product_line]
+{found 12 active projects with details...}
+
+📋 Final answer:
+I found 12 active projects in the Market & Sell portfolio:
+1. Customer Portal Redesign - Budget: $450K, Timeline: Q1-Q2 2025
+2. Mobile App Enhancement - Budget: $320K, Timeline: Q2 2025
+...
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chat Commands Section -->
+            <section id="chat-commands" class="section">
+                <h2>💬 Chat Commands</h2>
+
+                <div class="card">
+                    <h3>Available Commands</h3>
+                    <p>All commands start with <code>:</code> prefix:</p>
+                    
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                        <tr style="background: #2c3e50; color: white;">
+                            <th style="padding: 1rem; text-align: left;">Command</th>
+                            <th style="padding: 1rem; text-align: left;">Description</th>
+                            <th style="padding: 1rem; text-align: left;">Example</th>
+                        </tr>
+                        <tr style="background: #f8f9fa;">
+                            <td style="padding: 0.75rem;"><code>:list-sessions</code></td>
+                            <td style="padding: 0.75rem;">List all saved sessions with timestamps and sizes</td>
+                            <td style="padding: 0.75rem;"><code>:list</code></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.75rem;"><code>:use &lt;id&gt;</code></td>
+                            <td style="padding: 0.75rem;">Switch to a different session</td>
+                            <td style="padding: 0.75rem;"><code>:use q1_analysis</code></td>
+                        </tr>
+                        <tr style="background: #f8f9fa;">
+                            <td style="padding: 0.75rem;"><code>:show</code></td>
+                            <td style="padding: 0.75rem;">Display current session ID</td>
+                            <td style="padding: 0.75rem;"><code>:show</code></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.75rem;"><code>:show &lt;id&gt;</code></td>
+                            <td style="padding: 0.75rem;">Display session content (first 4000 chars)</td>
+                            <td style="padding: 0.75rem;"><code>:show default</code></td>
+                        </tr>
+                        <tr style="background: #f8f9fa;">
+                            <td style="padding: 0.75rem;"><code>:provider &lt;name&gt;</code></td>
+                            <td style="padding: 0.75rem;">Switch LLM provider (anthropic, bedrock, openai, gemini)</td>
+                            <td style="padding: 0.75rem;"><code>:provider openai</code></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.75rem;"><code>:chart</code></td>
+                            <td style="padding: 0.75rem;">Info about chart generation (currently disabled for auto-mode)</td>
+                            <td style="padding: 0.75rem;"><code>:chart</code></td>
+                        </tr>
+                        <tr style="background: #f8f9fa;">
+                            <td style="padding: 0.75rem;"><code>:exit</code></td>
+                            <td style="padding: 0.75rem;">Save session and exit client</td>
+                            <td style="padding: 0.75rem;"><code>:quit</code></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>Command Examples</h3>
+                    
+                    <h4>Session Management:</h4>
+                    <div class="code-block">
+# List all sessions
+[default|bedrock] Query: :list-sessions
+Saved sessions:
+ - session_20251028_143052_a3b4c5.json  2025-10-28 14:30  45KB
+ - q1_analysis.json  2025-10-27 10:15  128KB
+ - project_planning.json  2025-10-26 16:45  87KB
+
+# Switch to a session
+[default|bedrock] Query: :use q1_analysis
+Loaded session: q1_analysis
+[q1_analysis|bedrock] Query:
+
+# View session content
+[q1_analysis|bedrock] Query: :show
+Current session: q1_analysis
+                    </div>
+
+                    <h4>Provider Switching:</h4>
+                    <div class="code-block">
+# Switch from Bedrock to OpenAI
+[default|bedrock] Query: :provider openai
+Switched to OPENAI provider
+[default|openai] Query:
+
+# Switch to Anthropic
+[default|openai] Query: :provider anthropic
+Switched to ANTHROPIC provider
+[default|anthropic] Query:
+                    </div>
+                </div>
+            </section>
+
+            <!-- Session Management Section -->
+            <section id="session-management" class="section">
+                <h2>💾 Session Management</h2>
+
+                <div class="card">
+                    <h3>How Sessions Work</h3>
+                    <p>The client maintains persistent conversation sessions with automatic memory management:</p>
+                    
+                    <ul style="margin-left: 2rem; margin-top: 1rem;">
+                        <li><strong>Automatic Session Creation:</strong> Each run creates a unique session ID (timestamp + UUID)</li>
+                        <li><strong>Named Sessions:</strong> Use <code>--session name</code> flag or <code>:use name</code> command</li>
+                        <li><strong>Persistent Storage:</strong> Sessions saved to <code>chat_memory/</code> directory as JSON files</li>
+                        <li><strong>Memory Limit:</strong> Each session stores last 200 messages (configurable via <code>MEMORY_MAX_MESSAGES</code>)</li>
+                        <li><strong>Atomic Writes:</strong> Uses temp file + fsync + rename for crash-safe persistence</li>
+                        <li><strong>Context Preservation:</strong> Full conversation history available to LLM across restarts</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>Session File Structure</h3>
+                    <p>Sessions are stored as JSON arrays of message objects:</p>
+                    <div class="code-block">
+[
+  {
+    "role": "user",
+    "content": "List all active projects"
+  },
+  {
+    "role": "assistant",
+    "content": "{\"tool\":\"get_all_projects\",\"arguments\":{}}"
+  },
+  {
+    "role": "user",
+    "content": "[TOOL OUTPUT - get_all_projects]\n{...project data...}"
+  },
+  {
+    "role": "assistant",
+    "content": "I found 45 active projects..."
+  }
+]
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Session Best Practices</h3>
+                    <div class="alert info">
+                        <strong>💡 Tips:</strong>
+                        <ul style="margin-left: 2rem; margin-top: 0.5rem;">
+                            <li>Use descriptive session names for different analysis tasks (<code>q1_budget</code>, <code>resource_planning</code>)</li>
+                            <li>Sessions automatically include tool outputs, so follow-up questions have full context</li>
+                            <li>Large tool outputs (>4KB) are automatically exported to <code>data-exports/</code> and referenced</li>
+                            <li>Sessions persist across provider switches - change LLM while maintaining context</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chart Integration Section -->
+            <section id="chart-integration" class="section">
+                <h2>📊 Chart Integration</h2>
+
+                <div class="card">
+                    <h3>Chart Generation Pipeline</h3>
+                    <p>The client automatically generates charts from PMO data using a multi-tier approach:</p>
+                    
+                    <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 1rem 0;">
+                        <h4 style="margin-top: 0;">Tier 1: D3 MCP Server (Preferred)</h4>
+                        <ul style="margin-left: 2rem;">
+                            <li>Connects to D3 Chart MCP Server via stdio</li>
+                            <li>Calls <code>render_from_dataset</code> tool with Chart.js data</li>
+                            <li>Server generates Chart.js HTML with embedded data</li>
+                            <li>Returns HTML file path</li>
+                        </ul>
+                        
+                        <h4>Tier 2: Local Chart.js Generation (Fallback)</h4>
+                        <ul style="margin-left: 2rem;">
+                            <li><code>create_simple_local_chart()</code> function</li>
+                            <li>Generates Chart.js HTML from JSON data</li>
+                            <li>Saves to <code>html-charts/</code> directory</li>
+                            <li>Auto-opens in default browser</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Chart Types Supported</h3>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>Line Charts:</strong> Time-series data (resource capacity over time)</li>
+                        <li><strong>Bar Charts:</strong> Comparisons (project costs, resource allocation)</li>
+                        <li><strong>Grouped Bar Charts:</strong> Multi-project allocation by time period</li>
+                        <li><strong>Donut/Pie Charts:</strong> Distribution (portfolio spend breakdown)</li>
+                        <li><strong>Stacked Bar Charts:</strong> Cumulative data visualization</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>Chart Data Transformation</h3>
+                    <p>The client automatically transforms PMO data to Chart.js format:</p>
+                    
+                    <h4>Resource Allocation Example:</h4>
+                    <div class="code-block">
+# Input: PMO tool output
+{
+  "resource_details": {"resource_name": "John Doe", ...},
+  "data": [
+    {"start_date": "2025-01-01", "end_date": "2025-01-31",
+     "total_capacity": 160, "planned": 120, "actual": 115, ...},
+    {"start_date": "2025-02-01", "end_date": "2025-02-28",
+     "total_capacity": 160, "planned": 140, "actual": 135, ...}
+  ]
+}
+
+# Output: Chart.js format
+{
+  "labels": ["Jan 2025", "Feb 2025"],
+  "datasets": [
+    {"label": "Total Capacity", "data": [160, 160], "borderColor": "..."},
+    {"label": "Planned Hours", "data": [120, 140], "borderColor": "..."},
+    {"label": "Available Capacity", "data": [40, 20], "borderColor": "..."}
+  ],
+  "title": "Resource Capacity and Allocation for John Doe"
+}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Chart File Management</h3>
+                    <p>Charts are saved with meaningful filenames:</p>
+                    <div class="code-block">
+# Filename format:
+{chart_type}_{query_hint}_{timestamp}_{hash}.html
+
+# Examples:
+resource_chart_auto_20251028_143052.html
+donut_portfolio_spend_20251028_144530.html
+grouped_bar_project_allocation_20251028_150215.html
+                    </div>
+                    
+                    <p style="margin-top: 1rem;">Location: <code>D:\GenAI\MCP\client\pmo\html-charts\</code></p>
+                </div>
+
+                <div class="alert warning">
+                    <strong>⚠️ Note:</strong> Automatic chart generation is currently disabled by default. Charts are only generated when explicitly requested in queries (e.g., "create a chart showing..."). Use the <code>:chart</code> command for more information.
+                </div>
+            </section>
+
+            <!-- Data Persistence Section -->
+            <section id="data-persistence" class="section">
+                <h2>💿 Data Persistence</h2>
+
+                <div class="card">
+                    <h3>Client Data Storage</h3>
+                    <p>The client maintains three types of persistent data:</p>
+                </div>
+
+                <div class="card">
+                    <h4>1. Chat Sessions (<code>chat_memory/</code>)</h4>
+                    <p><strong>Purpose:</strong> Conversation history for context preservation</p>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>Format:</strong> JSON array of message objects</li>
+                        <li><strong>Size Limit:</strong> 200 messages per session (auto-trimmed)</li>
+                        <li><strong>Naming:</strong> <code>{session_id}.json</code></li>
+                        <li><strong>Persistence:</strong> Atomic writes with fsync</li>
+                    </ul>
+                    <div class="code-block">
+# Session file example
+D:\GenAI\MCP\client\pmo\chat_memory\session_20251028_143052_a3b4c5.json
+D:\GenAI\MCP\client\pmo\chat_memory\q1_analysis.json
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h4>2. Generated Charts (<code>html-charts/</code>)</h4>
+                    <p><strong>Purpose:</strong> Visual outputs for PMO data analysis</p>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>Format:</strong> Complete HTML files with embedded Chart.js and data</li>
+                        <li><strong>Self-Contained:</strong> No external dependencies, works offline</li>
+                        <li><strong>Naming:</strong> <code>{type}_{query}_{timestamp}_{hash}.html</code></li>
+                        <li><strong>Auto-Open:</strong> Charts automatically open in default browser</li>
+                    </ul>
+                    <div class="code-block">
+# Chart file examples
+D:\GenAI\MCP\client\pmo\html-charts\resource_chart_auto_20251028_143052.html
+D:\GenAI\MCP\client\pmo\html-charts\donut_portfolio_spend_20251028_144530.html
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h4>3. Large Data Exports (<code>data-exports/</code>)</h4>
+                    <p><strong>Purpose:</strong> Offload large tool outputs to prevent memory bloat</p>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>Trigger:</strong> Automatic when tool output >4KB</li>
+                        <li><strong>Format:</strong> JSON files with complete tool output</li>
+                        <li><strong>Naming:</strong> <code>payload_{tool}_{session}_{timestamp}.json</code></li>
+                        <li><strong>Reference:</strong> Conversation includes <code>[SAVED_PAYLOAD] {path}</code> marker</li>
+                    </ul>
+                    <div class="code-block">
+# Export file examples
+D:\GenAI\MCP\client\pmo\data-exports\payload_get_all_projects_session_xxx_20251028_143052.json
+D:\GenAI\MCP\client\pmo\data-exports\payload_get_resource_capacity_allocation_q1_analysis_20251028_144530.json
+                    </div>
+                </div>
+
+                <div class="alert info">
+                    <strong>💡 Data Management:</strong> All three storage locations can be safely cleared if needed. Sessions and exports can be regenerated through new queries, and charts can be recreated from PMO data.
+                </div>
+            </section>
+
+            <!-- Examples Section -->
+            <section id="examples" class="section">
+                <h2>📋 Usage Examples</h2>
+
+                <div class="card">
+                    <h3>Example 1: Simple Project Query</h3>
+                    <div class="code-block">
+[default|bedrock] Query: How many projects are in the Market & Sell portfolio?
+
+🔧 Executing: get_projects_by_portfolio_and_product_line
+   ✅ Tool completed successfully
+   
+📋 Final answer:
+There are 12 active projects in the Market & Sell portfolio:
+- 8 in active development
+- 3 in planning phase
+- 1 on hold
+
+Total budget: $3.2M
+Total planned effort: 12,450 hours
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Example 2: Resource Allocation Analysis</h3>
+                    <div class="code-block">
+[default|bedrock] Query: Show me resource 42's capacity from Jan to Mar 2025 monthly
+
+🔧 Executing: get_resource_capacity_allocation
+   📋 Arguments: {"resource_id": 42, "start_date": "2025-01-01", 
+                  "end_date": "2025-03-31", "interval": "Monthly"}
+   ✅ Tool completed successfully
+   
+[TOOL OUTPUT - get_resource_capacity_allocation]
+{
+  "resource_details": {"resource_name": "Sarah Chen", "role": "Senior Developer"},
+  "data": [
+    {"month": "2025-01", "total_capacity": 160, "planned": 145, "actual": 142, "available": 15},
+    {"month": "2025-02", "total_capacity": 160, "planned": 155, "actual": 150, "available": 5},
+    {"month": "2025-03", "total_capacity": 160, "planned": 120, "actual": 0, "available": 40}
+  ]
+}
+
+📋 Final answer:
+Sarah Chen's Q1 2025 capacity allocation:
+
+January: 142/160 hours utilized (88.75% utilization)
+- Planned: 145 hours
+- Actual: 142 hours  
+- Available: 15 hours
+
+February: 150/160 hours utilized (93.75% utilization)
+- Planned: 155 hours
+- Actual: 150 hours
+- Available: 5 hours
+
+March: Planning phase (75% planned)
+- Planned: 120 hours
+- Available: 40 hours
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Example 3: Multi-Step Plan Execution</h3>
+                    <div class="code-block">
+[default|bedrock] Query: Compare resource 1 and resource 2 monthly hours for 2025
+
+💭 BEDROCK: JSON tool call received (multi-step plan)
+🔧 Plan step 1: Executing get_resource_capacity_allocation
+   ✅ Tool completed successfully
+🔧 Plan step 2: Executing get_resource_capacity_allocation
+   ✅ Tool completed successfully
+
+[TOOL OUTPUT - s1] (Resource 1 data...)
+[TOOL OUTPUT - s2] (Resource 2 data...)
+
+📋 Final answer:
+Resource Comparison for 2025:
+
+Resource 1 (John Doe - Tech Lead):
+- Average utilization: 87.3%
+- Peak month: May (95%)
+- Lowest month: December (65%)
+- Total planned hours: 1,680
+
+Resource 2 (Jane Smith - Senior Dev):
+- Average utilization: 91.2%
+- Peak month: March (98%)
+- Lowest month: August (72%)
+- Total planned hours: 1,750
+
+Key insight: Resource 2 is over-allocated in Q1 with 98% utilization 
+in March, suggesting need for workload rebalancing.
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Example 4: Provider Switching</h3>
+                    <div class="code-block">
+# Start with Bedrock
+[default|bedrock] Query: Analyze project risks for Market & Sell portfolio
+
+🔧 Executing: get_projects_by_portfolio_and_product_line
+   ✅ Tool completed successfully
+
+📋 Bedrock's Analysis:
+Based on the 12 projects in Market & Sell portfolio, key risks include...
+
+# Switch to OpenAI for comparison
+[default|bedrock] Query: :provider openai
+Switched to OPENAI provider
+
+# Ask for alternative perspective (context preserved!)
+[default|openai] Query: Give me a different risk analysis perspective
+
+📋 OpenAI's Analysis:
+Reviewing the same 12 projects, I'd emphasize different risk factors...
+
+# Switch back to Bedrock
+[default|openai] Query: :provider bedrock
+Switched to BEDROCK provider
+                    </div>
+                </div>
+            </section>
+
+            <!-- Troubleshooting Section -->
+            <section id="troubleshooting" class="section">
+                <h2>🛠️ Troubleshooting</h2>
+
+                <div class="card">
+                    <h3>Common Issues</h3>
+                    
+                    <h4>1. MCP Server Connection Errors</h4>
+                    <div class="alert warning">
+                        <strong>Error:</strong> "Connection closed" or "MCP server not found"
+                    </div>
+                    <p><strong>Solutions:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>Verify server path: <code>D:\GenAI\MCP\server\pmo\server.py</code> exists</li>
+                        <li>Check Python executable matches virtual environment</li>
+                        <li>Ensure PMO MCP server dependencies installed: <code>pip install fastmcp</code></li>
+                        <li>Test server standalone: <code>python server.py</code></li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>2. LLM Provider Authentication</h4>
+                    <div class="alert warning">
+                        <strong>Error:</strong> "API key not configured" or "Authentication failed"
+                    </div>
+                    <p><strong>Solutions:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li><strong>Bedrock:</strong> Configure AWS credentials (<code>aws configure</code>) and set <code>AWS_REGION</code></li>
+                        <li><strong>Anthropic:</strong> Set <code>ANTHROPIC_API_KEY</code> in .env file</li>
+                        <li><strong>OpenAI:</strong> Set <code>OPENAI_API_KEY</code> in .env file</li>
+                        <li><strong>Gemini:</strong> Set <code>GEMINI_API_KEY</code> in .env file</li>
+                        <li>Reload environment: Restart client after .env changes</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>3. Unicode/Encoding Errors</h4>
+                    <div class="alert warning">
+                        <strong>Error:</strong> "'charmap' codec can't encode character" or Unicode errors
+                    </div>
+                    <p><strong>Solutions:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>Client automatically sets <code>PYTHONIOENCODING=utf-8</code> on startup</li>
+                        <li>If errors persist, clean PMO server data files of problematic emojis</li>
+                        <li>The client replaces common emojis with text markers (🔍 → [search])</li>
+                        <li>Fallback ASCII encoding applied automatically for problematic characters</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>4. Chart Generation Issues</h4>
+                    <div class="alert warning">
+                        <strong>Error:</strong> "Chart generation disabled" or chart not appearing
+                    </div>
+                    <p><strong>Note:</strong> Automatic chart generation is currently disabled by default.</p>
+                    <p><strong>Workarounds:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>Explicitly request charts in queries: "Create a chart showing..."</li>
+                        <li>D3 MCP server path: <code>D:\GenAI\MCP\server\charts\mcp-d3-stdio-custom\d3_chart_mcp.py</code></li>
+                        <li>Check <code>html-charts/</code> directory for generated files</li>
+                        <li>Manually open chart HTML files in browser</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h4>5. Session Persistence Problems</h4>
+                    <div class="alert warning">
+                        <strong>Error:</strong> "Failed to load chat memory" or session not found
+                    </div>
+                    <p><strong>Solutions:</strong></p>
+                    <ul style="margin-left: 2rem;">
+                        <li>Check <code>chat_memory/</code> directory exists and is writable</li>
+                        <li>Verify session file exists: <code>ls chat_memory/*.json</code></li>
+                        <li>Session ID sanitization: Only alphanumeric, underscores, dots, and hyphens allowed</li>
+                        <li>Start fresh session if corrupted: <code>python pmo_mcp_client.py --session new_session</code></li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>Debug Mode</h3>
+                    <p>For detailed debugging, uncomment debug print statements in the code:</p>
+                    <div class="code-block">
+# Look for commented print statements like:
+# print('call_bedrock: attempting client.converse()...')  # Debug
+# print(f"🔍 Looking for D3 MCP server at: {d3_mcp_server}")  # Debug
+
+# Uncomment these for verbose output during troubleshooting
+                    </div>
+                </div>
+
+                <div class="alert info">
+                    <strong>💡 Need More Help?</strong> Check the PMO MCP Server documentation for server-side issues, or review the client source code (<code>pmo_mcp_client.py</code>) for detailed implementation logic.
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

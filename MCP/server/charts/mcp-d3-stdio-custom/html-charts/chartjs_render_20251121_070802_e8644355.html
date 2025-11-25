@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Bar Chart ChartJS - CHARTJS</title>
+<script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'></script>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;margin:20px;background:#f5f5f5}
+.container{max-width:1100px;margin:0 auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,0.08)}
+.chart-wrap{position:relative;height:520px;padding:10px}
+canvas{width:100% !important;height:100% !important}
+.legend-box{background:#ffffff;border:1px solid rgba(0,0,0,0.06);padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.04);margin-top:12px;display:flex;justify-content:center}
+.legend-custom{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.legend-item{display:flex;align-items:center;gap:10px;font-size:13px;color:#fff;padding:8px 12px;border-radius:8px;font-weight:600}
+.legend-color{width:12px;height:12px;border-radius:2px;display:inline-block;margin-right:8px}
+.info{font-size:13px;color:#666;text-align:center;margin-top:10px}
+</style>
+</head>
+<body>
+<div class='container'>
+<h2>Bar Chart ChartJS - CHARTJS</h2>
+<div class='chart-wrap'>
+<canvas id='hoursChart'></canvas>
+</div>
+<div class='legend-box' aria-hidden='false'>
+  <div id='chart-legend' class='legend-custom'></div>
+</div>
+<div class='info'>Generated from PMO data</div>
+</div>
+<script id='chart-data' type='application/json'>
+{"labels": ["Jan", "Feb", "Mar", "Apr", "May"], "datasets": [{"label": "Sales", "data": [100, 150, 120, 180, 200], "backgroundColor": "#1f77b4", "borderColor": "#1f77b4"}]}
+</script>
+        <script>
+(function(){
+    try{
+        var chartType = 'bar';
+        // Accept common synonyms and normalize to Chart.js expected types
+        if (chartType === 'donut') chartType = 'doughnut';
+        if (!chartType) chartType = 'line';
+    var payload = JSON.parse(document.getElementById('chart-data').textContent || '{}');
+    payload.datasets = payload.datasets || [];
+    payload.datasets.forEach(function(ds){
+            ds.data = (ds.data || []).map(function(v){ if (v === null || v === undefined) return 0; if (typeof v === 'number') return v; var n = Number(String(v).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : 0; });
+            ds.backgroundColor = ds.backgroundColor || ds.borderColor || '#777';
+            ds.borderColor = ds.borderColor || ds.backgroundColor;
+            ds.borderWidth = ds.borderWidth != null ? ds.borderWidth : 2;
+            // make lines and points more visible by default
+            if (ds.pointRadius == null) ds.pointRadius = 3;
+            if (ds.tension == null) ds.tension = 0.35;
+    });
+
+    var ctx = document.getElementById('hoursChart').getContext('2d');
+        var opts = {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true } },
+            plugins: { legend: { display: false } },
+            elements: {
+                point: { radius: 3 },
+                line: { tension: 0.35, borderWidth: 2 }
+            }
+        };
+    if (chartType === 'bar') opts.scales.x = { stacked: false };
+
+        try{ new Chart(ctx, { type: chartType, data: payload, options: opts }); }catch(e){
+            console.error('Chart init error', e);
+            // visible in-page error banner for easier debugging when running headless or in screenshots
+            try{
+                var err = document.createElement('div');
+                err.style.background = '#fee'; err.style.color = '#900'; err.style.padding = '12px'; err.style.border = '1px solid #f99'; err.style.margin = '8px'; err.style.borderRadius = '6px'; err.style.fontFamily='monospace';
+                err.textContent = 'Chart init error: ' + (e && e.message ? e.message : String(e));
+                document.body.insertBefore(err, document.body.firstChild);
+            }catch(_){}
+        }
+
+    var legendEl = document.getElementById('chart-legend'); legendEl.innerHTML = '';
+    if (chartType === 'pie' || chartType === 'doughnut'){
+      var labels = payload.labels || [];
+      var ds = payload.datasets && payload.datasets[0] || { data: [], backgroundColor: [] };
+      var bg = ds.backgroundColor || [];
+      for(var i=0;i<labels.length;i++){
+        var val = (ds.data && ds.data[i]) || 0;
+        var color = Array.isArray(bg) ? (bg[i] || '#777') : (bg || '#777');
+        var item = document.createElement('div'); item.className='legend-item'; item.style.background = color;
+        var sw = document.createElement('span'); sw.className='legend-color'; sw.style.background = color; sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginRight='8px'; sw.style.borderRadius='2px';
+        var lbl = document.createElement('span'); lbl.textContent = labels[i] + ' — ' + (Number(val)||0).toLocaleString();
+        item.appendChild(sw); item.appendChild(lbl); legendEl.appendChild(item);
+      }
+    } else {
+      payload.datasets.forEach(function(ds){
+        var total = 0; for(var i=0;i<ds.data.length;i++){ var v = ds.data[i]; if(typeof v === 'number' && !isNaN(v)) total += v; }
+        var item = document.createElement('div'); item.className='legend-item'; item.style.background = ds.backgroundColor || '#777';
+        var sw = document.createElement('span'); sw.className='legend-color'; sw.style.background = (ds.backgroundColor||'#777'); sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginRight='8px'; sw.style.borderRadius='2px';
+        var lbl = document.createElement('span'); lbl.textContent = ds.label + ' — ' + total.toLocaleString();
+        item.appendChild(sw); item.appendChild(lbl); legendEl.appendChild(item);
+      });
+    }
+
+  }catch(e){ console.error('render error', e); }
+})();
+</script>
+<details style="margin:12px 20px;padding:10px;border-radius:6px;background:#fff;border:1px solid #eee;max-width:1100px">
+    <summary style="font-weight:600">Debug: embedded chart payload (click to expand)</summary>
+    <pre style="white-space:pre-wrap;word-break:break-word;padding:8px;margin:8px;background:#fafafa;border-radius:4px;border:1px solid #efefef">{"labels": ["Jan", "Feb", "Mar", "Apr", "May"], "datasets": [{"label": "Sales", "data": [100, 150, 120, 180, 200], "backgroundColor": "#1f77b4", "borderColor": "#1f77b4"}]}</pre>
+</details>
+</body>
+</html>

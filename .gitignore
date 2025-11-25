@@ -1,0 +1,29 @@
+# --- Environment files ---
+MCP\client\pmo\.env
+MCP\client\nlp_to_structured_data\.env
+# --- Backup folders ---
+Backups\
+# --- Python cache ---
+__pycache__\
+MCP\server\pmo\__pycache__\
+MCP\server\nlp_to_structured_data\__pycache__\
+MCP\server\charts\mcp-d3-stdio-custom\__pycache__\
+MCP\client\pmo\__pycache__\
+MCP/client/ppt/LLM_PROVIDERS.md
+# --- Common virtual environments ---
+venv\
+.env\
+*.env
+# --- Logs and temporary files ---
+*.log
+*.tmp
+# --- IDE / Editor files ---
+.vscode\
+.idea\
+*.iml
+# --- Node / npm artifacts ---
+node_modules\
+npm-debug.log*
+# --- OS junk ---
+.DS_Store
+Thumbs.db

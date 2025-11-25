@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Integration Architecture</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);
+            color: #2c3e50;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.95;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 50px;
+        }
+
+        .section-title {
+            font-size: 1.8em;
+            color: #667eea;
+            margin-bottom: 25px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        .architecture-diagram {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 40px;
+            margin: 30px 0;
+            border: 2px solid #e1e4e8;
+        }
+
+        .diagram-container {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .diagram-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .component {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 20px 30px;
+            min-width: 200px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(102, 126, 234, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .component:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .component.client {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            font-size: 1.2em;
+            border: none;
+        }
+
+        .component.mcp-server {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            font-weight: 600;
+            min-width: 250px;
+            border: none;
+        }
+
+        .component.integration {
+            border-color: #48bb78;
+            background: linear-gradient(to bottom, white 0%, #f0fff4 100%);
+        }
+
+        .component.data-source {
+            border-color: #4299e1;
+            background: linear-gradient(to bottom, white 0%, #ebf8ff 100%);
+        }
+
+        .component.api {
+            border-color: #ed8936;
+            background: linear-gradient(to bottom, white 0%, #fffaf0 100%);
+        }
+
+        .arrow {
+            font-size: 2em;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .arrow-down {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.5em;
+            color: #667eea;
+        }
+
+        .component-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .component-details {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 30px;
+            margin-top: 30px;
+        }
+
+        .components-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-top: 30px;
+        }
+
+        .component-card {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+        }
+
+        .component-card:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        }
+
+        .component-card h3 {
+            color: #667eea;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .component-card .icon {
+            font-size: 1.5em;
+        }
+
+        .component-card ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .component-card li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+            color: #4a5568;
+        }
+
+        .component-card li:before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .integration-types {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .integration-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            border: 2px solid #e1e4e8;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .integration-card:hover {
+            border-color: #667eea;
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(102, 126, 234, 0.15);
+        }
+
+        .integration-card h4 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .integration-card .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .badge.external {
+            background: #e6fffa;
+            color: #319795;
+        }
+
+        .badge.internal {
+            background: #fef5e7;
+            color: #d68910;
+        }
+
+        .badge.database {
+            background: #ebf4ff;
+            color: #3182ce;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .legend-color.external {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        }
+
+        .legend-color.database {
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+        }
+
+        .legend-color.api {
+            background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+        }
+
+        footer {
+            background: #2c3e50;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            margin-top: 40px;
+        }
+
+        .note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            color: #856404;
+        }
+
+        .flow-description {
+            background: #e7f3ff;
+            border-left: 4px solid #4299e1;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .flow-description h4 {
+            color: #2c5282;
+            margin-bottom: 10px;
+        }
+
+        .flow-description ol {
+            margin-left: 20px;
+            color: #2d3748;
+        }
+
+        .flow-description li {
+            margin: 8px 0;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8em;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .diagram-row {
+                flex-direction: column;
+            }
+
+            .components-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MCP Integration Architecture</h1>
+            <p>Model Context Protocol - Client-Server Integration Patterns</p>
+        </header>
+
+        <div class="content">
+            <!-- Architecture Overview Section -->
+            <div class="section">
+                <h2 class="section-title">📊 Architecture Overview</h2>
+                
+                <div class="architecture-diagram">
+                    <div class="diagram-container">
+                        <!-- Client Layer -->
+                        <div class="diagram-row">
+                            <div class="component client">
+                                MCP Client Application
+                            </div>
+                        </div>
+
+                        <div class="arrow-down">↓</div>
+
+                        <!-- MCP Server Layer -->
+                        <div class="diagram-row">
+                            <div class="component mcp-server">
+                                MCP Server
+                                <div style="font-size: 0.8em; margin-top: 8px; opacity: 0.9;">
+                                    (Tools • Resources • Prompts)
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="arrow-down">↓</div>
+
+                        <!-- Integration Layer -->
+                        <div class="diagram-row">
+                            <div class="component-group">
+                                <div style="text-align: center; font-weight: 600; color: #667eea; margin-bottom: 10px;">
+                                    Integration Targets
+                                </div>
+                                <div class="diagram-row">
+                                    <div class="component integration">
+                                        <div style="font-weight: 600; margin-bottom: 8px;">External Platforms</div>
+                                        <div style="font-size: 0.85em; color: #48bb78;">
+                                            JIRA • Confluence<br>
+                                            AWS • Salesforce
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="component data-source">
+                                        <div style="font-weight: 600; margin-bottom: 8px;">Data Sources</div>
+                                        <div style="font-size: 0.85em; color: #4299e1;">
+                                            SQL Databases<br>
+                                            NoSQL • Data Lakes
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="component api">
+                                        <div style="font-weight: 600; margin-bottom: 8px;">Internal APIs</div>
+                                        <div style="font-size: 0.85em; color: #ed8936;">
+                                            Product APIs<br>
+                                            Microservices
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color external"></div>
+                        <span>Third-Party Platforms</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color database"></div>
+                        <span>Structured Data / Databases</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color api"></div>
+                        <span>Internal Product APIs</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Flow Section -->
+            <div class="section">
+                <h2 class="section-title">🔄 Request-Response Flow</h2>
+                
+                <div class="flow-description">
+                    <h4>Typical MCP Interaction Flow:</h4>
+                    <ol>
+                        <li><strong>Client Request:</strong> Application sends a request to MCP Server (e.g., "Get project data from JIRA")</li>
+                        <li><strong>Server Processing:</strong> MCP Server identifies the appropriate tool to handle the request</li>
+                        <li><strong>Integration Call:</strong> Server executes the tool, which connects to the target platform (JIRA API, Database, etc.)</li>
+                        <li><strong>Data Retrieval:</strong> Target system returns data to the MCP Server</li>
+                        <li><strong>Response Formatting:</strong> Server formats and enriches the response using resources and prompts</li>
+                        <li><strong>Client Delivery:</strong> Formatted response is delivered back to the client application</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- MCP Server Components Section -->
+            <div class="section">
+                <h2 class="section-title">🔧 MCP Server Components</h2>
+                
+                <div class="component-details">
+                    <div class="components-grid">
+                        <!-- Tools -->
+                        <div class="component-card">
+                            <h3>
+                                <span class="icon">🛠️</span>
+                                Tools
+                            </h3>
+                            <ul>
+                                <li>Execute specific actions and operations</li>
+                                <li>Connect to external APIs and services</li>
+                                <li>Perform database queries and updates</li>
+                                <li>Process and transform data</li>
+                                <li>Handle authentication and authorization</li>
+                                <li>Implement business logic and workflows</li>
+                                <li>Return structured responses to clients</li>
+                            </ul>
+                        </div>
+
+                        <!-- Resources -->
+                        <div class="component-card">
+                            <h3>
+                                <span class="icon">📚</span>
+                                Resources
+                            </h3>
+                            <ul>
+                                <li>Provide static and dynamic content</li>
+                                <li>Expose configuration and metadata</li>
+                                <li>Serve documentation and schemas</li>
+                                <li>Supply context for AI processing</li>
+                                <li>Offer templates and examples</li>
+                                <li>Share knowledge bases and FAQs</li>
+                                <li>Enable content versioning</li>
+                            </ul>
+                        </div>
+
+                        <!-- Prompts -->
+                        <div class="component-card">
+                            <h3>
+                                <span class="icon">💬</span>
+                                Prompts
+                            </h3>
+                            <ul>
+                                <li>Define reusable prompt templates</li>
+                                <li>Guide AI model interactions</li>
+                                <li>Standardize query patterns</li>
+                                <li>Provide domain-specific instructions</li>
+                                <li>Support parameterized conversations</li>
+                                <li>Enable consistent AI responses</li>
+                                <li>Facilitate multi-step workflows</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Integration Types Section -->
+            <div class="section">
+                <h2 class="section-title">🔌 Integration Types & Examples</h2>
+                
+                <h3 style="color: #48bb78; margin: 30px 0 15px 0;">Third-Party Platforms</h3>
+                <div class="integration-types">
+                    <div class="integration-card">
+                        <h4>JIRA</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">Issue tracking, project management, sprint planning</p>
+                        <span class="badge external">External API</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>Confluence</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">Documentation, knowledge management, collaboration</p>
+                        <span class="badge external">External API</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>AWS Services</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">S3, Lambda, DynamoDB, CloudWatch, etc.</p>
+                        <span class="badge external">Cloud Platform</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>Salesforce</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">CRM, sales automation, customer data</p>
+                        <span class="badge external">External API</span>
+                    </div>
+                </div>
+
+                <h3 style="color: #4299e1; margin: 30px 0 15px 0;">Structured Data / Databases</h3>
+                <div class="integration-types">
+                    <div class="integration-card">
+                        <h4>SQL Databases</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">PostgreSQL, MySQL, SQL Server, Oracle</p>
+                        <span class="badge database">Relational DB</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>NoSQL Databases</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">MongoDB, Cassandra, Redis, DynamoDB</p>
+                        <span class="badge database">NoSQL DB</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>Data Warehouses</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">Snowflake, Redshift, BigQuery, Synapse</p>
+                        <span class="badge database">Analytics</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>Data Lakes</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">S3, Azure Data Lake, HDFS, MinIO</p>
+                        <span class="badge database">Storage</span>
+                    </div>
+                </div>
+
+                <h3 style="color: #ed8936; margin: 30px 0 15px 0;">Internal Product APIs</h3>
+                <div class="integration-types">
+                    <div class="integration-card">
+                        <h4>REST APIs</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">HTTP-based services, JSON/XML responses</p>
+                        <span class="badge internal">Internal</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>GraphQL APIs</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">Flexible queries, efficient data fetching</p>
+                        <span class="badge internal">Internal</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>Microservices</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">Service mesh, containerized services</p>
+                        <span class="badge internal">Internal</span>
+                    </div>
+                    <div class="integration-card">
+                        <h4>gRPC Services</h4>
+                        <p style="font-size: 0.9em; color: #4a5568;">High-performance RPC, protocol buffers</p>
+                        <span class="badge internal">Internal</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Benefits Section -->
+            <div class="section">
+                <h2 class="section-title">✨ Key Benefits</h2>
+                
+                <div class="components-grid">
+                    <div class="component-card" style="border-left-color: #48bb78;">
+                        <h3 style="color: #48bb78;">
+                            <span class="icon">🔐</span>
+                            Unified Authentication
+                        </h3>
+                        <ul>
+                            <li>Centralized credential management</li>
+                            <li>Single point of security control</li>
+                            <li>Simplified token rotation</li>
+                        </ul>
+                    </div>
+
+                    <div class="component-card" style="border-left-color: #4299e1;">
+                        <h3 style="color: #4299e1;">
+                            <span class="icon">📦</span>
+                            Standardized Interface
+                        </h3>
+                        <ul>
+                            <li>Consistent API patterns across platforms</li>
+                            <li>Reduced integration complexity</li>
+                            <li>Easier to add new data sources</li>
+                        </ul>
+                    </div>
+
+                    <div class="component-card" style="border-left-color: #ed8936;">
+                        <h3 style="color: #ed8936;">
+                            <span class="icon">⚡</span>
+                            Enhanced Performance
+                        </h3>
+                        <ul>
+                            <li>Connection pooling and caching</li>
+                            <li>Request batching and optimization</li>
+                            <li>Reduced network overhead</li>
+                        </ul>
+                    </div>
+
+                    <div class="component-card" style="border-left-color: #9f7aea;">
+                        <h3 style="color: #9f7aea;">
+                            <span class="icon">🔄</span>
+                            Flexibility & Scalability
+                        </h3>
+                        <ul>
+                            <li>Easy to add new integrations</li>
+                            <li>Horizontal scaling capabilities</li>
+                            <li>Pluggable architecture</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Implementation Note -->
+            <div class="note">
+                <strong>💡 Implementation Note:</strong> MCP servers act as intelligent middleware, providing a standardized way for AI applications to interact with various data sources and services. They abstract away the complexity of individual APIs while maintaining security, performance, and consistency.
+            </div>
+        </div>
+
+        <footer>
+            <p>MCP Integration Architecture Documentation</p>
+            <p style="font-size: 0.9em; opacity: 0.8; margin-top: 5px;">Model Context Protocol • November 2025</p>
+        </footer>
+    </div>
+</body>
+</html>

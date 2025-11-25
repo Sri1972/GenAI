@@ -1,0 +1,111 @@
+
+## 📋 **What I Need From You**
+
+### 1. **PMO MCP Purpose & Goals**
+- What is the main purpose of the PMO MCP?
+  - The PMO MCP is going to connect to a PMO Rest API and it would be used by an LLM Client and will allow the client to get data from a PMO API. 
+- What business problems should it solve?
+  - It will help get data on projects, project details, resources and resource details including capacity, allocations etc.
+- Who are the primary users (project managers, executives, analysts, etc.)?
+  - The primary user of the MCP is an LLM client that end users will use
+
+### 2. **Specific Use Cases & Workflows**
+- What questions should users be able to ask?
+  - Give me a list of projects or details of a project which could include start/end date, costs, effort hours, resources details
+  - Give me details of one project
+  - Give me details of projects in a specific strategic portfolio and/or product line
+  - Give me details of resource based on resource id, resource name
+  - Give me total hours and cost for a resource for a given period or provide the informtion in intervals over time
+  - Give me details of resources for a project
+  - Give me details of resources for a pecific strategic portfolio and/or product line
+
+### 3. **API Method Mapping**
+  - Give me the full list of projects or details all projects which could include start/end date, costs, effort hours, resources details  - ${BASE_API_URL}/projects
+  - Give me details of one project - ${BASE_API_URL}/projects/{project_id}. You may need to need to run ${BASE_API_URL}/projects to get all projects and then get the one the user wants.
+  - Give me details of projects in a specific strategic portfolio and/or product line:
+    - @projects_router.post('/projects/dynamic_filter')
+	async def projects_dynamic_filter(
+	    body: dict = Body(...)
+	) -> JSONResponse:
+	    """
+	    Dynamically filter projects and select response fields.
+	    Request body should contain:
+	    - filters: list of {"column", "operator", "value"}
+	    - logical_operator: "AND" or "OR" (defaults to "AND")
+	    - fields: list of additional columns to return (besides the constants)
+	    """
+	    
+  - Give me details of resource based on resource id, resource name
+    resources_router.get('/resources')
+	def get_resources():
+	
+  - Give me total hours and cost for a resource for a given period or provide the informtion in intervals over time
+    - @resources_router.get('/resource_capacity_allocation')
+	async def get_resource_capacity_allocation_route(
+	    resource_id: str = Query(..., description="Resource ID"),
+	    start_date: str = Query(f"{datetime.now().year}-01-01", description="Start date (YYYY-MM-DD)"),
+	    end_date: str = Query(f"{datetime.now().year}-12-31", description="End date (YYYY-MM-DD)"),
+	    interval: str = Query("Monthly", description="Interval: Weekly, Monthly, or empty for blocks"),
+	    project_id: int = Query(None, description="Optional: Filter project allocation details for specific project")
+	):
+  
+  - Give me details of resources for a project. You will need to probably call ${BASE_API_URL}/projects and get the id if user provides the name
+    - @resources_router.get('/project_capacity_allocation/{project_id}')
+	async def get_project_capacity_allocation(request: Request, project_id: int):
+	    interval = request.query_params.get('interval', 'Monthly')  # Default to Monthly
+	    start_date = request.query_params.get('start_date')
+	    end_date = request.query_params.get('end_date')
+	    
+  - Give me details of resources for a pecific strategic portfolio and/or product line
+    - @resources_router.get('/resource_capacity_allocation_per_portfolio')
+	async def resource_capacity_allocation_per_portfolio(
+	    strategic_portfolio: str = Query(None, description="Strategic Portfolio (optional)"),
+	    product_line: str = Query(None, description="Product Line (optional)"),
+	    start_date: str = Query(None, description="Start date (YYYY-MM-DD)"),
+	    end_date: str = Query(None, description="End date (YYYY-MM-DD)"),
+	    interval: str = Query("Monthly", description="Interval: Weekly, Monthly, or empty for blocks")
+	):
+
+### 4. **Tool Requirements**
+- What specific tools do you want in the MCP?
+- Should tools return raw data, formatted summaries, or both?
+- Any specific data transformations needed?
+
+### 5. **Response Formats**
+- How should data be presented to users?
+- Do you want charts/visualizations support?
+- Any specific formatting preferences?
+
+## 🛠️ **What I'll Build Based on Your Input**
+
+### **Tools** (`@mcp.tool()`)
+- Specific functions mapped to your use cases
+- Optimal API calling patterns
+- Error handling and validation
+- Data transformation and formatting
+
+### **Resources** (`@mcp.resource()`)
+- Updated documentation focused on your workflows
+- Usage examples for your specific use cases
+- Integration patterns and best practices
+
+### **Prompts** (`@mcp.prompt()`)
+- Template prompts for common PMO queries
+- Structured prompts for reports and analysis
+- User guidance prompts
+
+### **Metadata Updates**
+- Enhance existing metadata with your specific use cases
+- Add workflow patterns and business rules
+- Update examples to match your requirements
+
+## 📝 **Please Share Your Detailed Requirements**
+
+Go ahead and provide as much detail as you'd like about:
+- The business scenarios
+- User workflows  
+- Expected outcomes
+- API usage patterns
+- Any specific formatting or presentation needs
+
+The more specific you are, the better I can tailor the MCP to your exact needs!

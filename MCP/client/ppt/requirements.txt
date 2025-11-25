@@ -1,0 +1,17 @@
+# Core dependencies
+mcp>=0.1.0
+python-dotenv>=1.0.0
+
+# LLM Provider dependencies (install as needed)
+# Anthropic Claude
+anthropic>=0.18.0
+
+# OpenAI GPT
+openai>=1.0.0
+
+# AWS Bedrock
+boto3>=1.34.0
+botocore>=1.34.0
+
+# Google Gemini
+google-generativeai>=0.3.0

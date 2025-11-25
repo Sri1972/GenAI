@@ -1,0 +1,7 @@
+# Prompts used to instruct the chart generator
+
+# Example prompt templates (human readable)
+LINE_PROMPT: Create a D3 line chart with legend and tooltips. Use provided JSON data and embed it into the HTML.
+PIE_PROMPT: Create a D3 pie/donut chart. Use segment-level colors and include a legend showing value totals.
+
+# Edit these prompts to influence how the spawnable or adapter constructs charts.
