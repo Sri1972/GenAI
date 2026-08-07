@@ -1,0 +1,70 @@
+Excel Data Analysis Guide
+
+OVERVIEW:
+This system provides advanced Excel file analysis capabilities with support for multiple worksheets, 
+complex formatting, and business-oriented data structures commonly found in spreadsheets.
+
+EXCEL-SPECIFIC CAPABILITIES:
+1. Multi-Worksheet Analysis
+   - Automatic detection of all worksheets
+   - Cross-sheet relationship analysis
+   - Worksheet-specific querying
+
+2. Advanced Excel Features
+   - Merged cell handling
+   - Formula preservation and analysis
+   - Conditional formatting detection
+   - Data validation rules
+
+3. Business Context Integration
+   - Financial data patterns recognition
+   - Hierarchical data structures
+   - Report template identification
+
+WORKSHEET MANAGEMENT:
+- Auto-discovery of active worksheets
+- Sheet selection for targeted analysis
+- Cross-sheet data correlation
+- Summary views across multiple sheets
+
+EXCEL DATA PATTERNS:
+- Financial reports (P&L, Balance Sheet, Cash Flow)
+- Employee data and HR reports
+- Sales and performance dashboards
+- Inventory and operational data
+
+QUERY PATTERNS FOR EXCEL:
+- "Analyze data from [worksheet_name]"
+- "Compare data between sheets [sheet1] and [sheet2]"
+- "Show summary across all worksheets"
+- "Find relationships between [column1] and [column2]"
+- "Extract financial metrics from the report"
+
+EXCEL-SPECIFIC ANALYSIS:
+- Pivot table data extraction
+- Chart data analysis
+- Named range utilization
+- Cell comment analysis
+- Formula dependency tracking
+
+BUSINESS INTELLIGENCE FEATURES:
+- KPI extraction from dashboards
+- Trend analysis across time periods
+- Variance analysis (actual vs budget)
+- Performance metric calculations
+- Financial ratio analysis
+
+DATA QUALITY FOR EXCEL:
+- Header row detection across sheets
+- Merged cell impact assessment
+- Formula error identification
+- Data type consistency checks
+- Missing data pattern analysis
+
+METADATA INTEGRATION:
+Excel files often contain:
+- Business definitions in comments
+- Data validation rules as constraints
+- Named ranges as business concepts
+- Sheet names as data categories
+- Formatting as business rules

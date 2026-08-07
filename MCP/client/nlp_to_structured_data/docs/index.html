@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLP to Structured Data System - Complete Documentation</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <h1>🤖 NLP Data Client</h1>
+            <ul class="nav-menu">
+                <li><a href="#overview" class="nav-link active">🌟 Overview</a></li>
+                <li><a href="#architecture" class="nav-link">🏗️ Architecture</a></li>
+                <li><a href="#components" class="nav-link">🔧 Components</a></li>
+                <li><a href="#mcp-system" class="nav-link">🔌 MCP System</a></li>
+                <li><a href="#metadata" class="nav-link">📋 Metadata</a></li>
+                <li><a href="#sample-data" class="nav-link">📁 Sample Data</a></li>
+                <li><a href="#quickstart" class="nav-link">🚀 Quick Start</a></li>
+                <li><a href="#examples" class="nav-link">💬 Examples</a></li>
+                <li><a href="#testing" class="nav-link">🧪 Testing</a></li>
+                <li><a href="#api-reference" class="nav-link">📚 Command Reference</a></li>
+                <li><a href="#troubleshooting" class="nav-link">🛠️ Troubleshooting</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>🤖 NLP to Structured Data Chat System</h1>
+                <p>Revolutionary AI-Powered Data Analysis Platform</p>
+                <p>Chat with your data using natural language - Agent-free Architecture!</p>
+            </div>
+
+            <!-- Overview Section -->
+            <section id="overview" class="section active">
+                <h2>🌟 System Overview</h2>
+                
+                <div class="card">
+                    <h3>What is this system?</h3>
+                    <p>The Data Chat System is a revolutionary platform that allows you to interact with your data using natural language. Instead of writing complex SQL queries or scripts, simply ask questions in plain English and get intelligent, formatted responses.</p>
+                    
+                    <div class="alert success">
+                        <strong>🚀 Revolutionary Architecture:</strong> This system eliminates the traditional agent layer, providing direct Client → Server → Service → Data flow for maximum performance and simplicity!
+                    </div>
+                </div>
+
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">🗣️</div>
+                        <h4>Natural Language Interface</h4>
+                        <p>Ask questions in plain English and get intelligent responses</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📊</div>
+                        <h4>Multi-Format Support</h4>
+                        <p>CSV, Excel, JSON, API - all in one unified interface</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🧠</div>
+                        <h4>AI-Powered Analysis</h4>
+                        <p>Claude AI provides intelligent insights and formatting</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔌</div>
+                        <h4>MCP Integration</h4>
+                        <p>Model Context Protocol for seamless Claude Desktop integration</p>
+                    </div>
+                </div>
+
+                <div class="alert info">
+                    <strong>💡 Key Innovation:</strong> This system doesn't use traditional charting libraries. Instead, it leverages Claude AI's intelligence to understand your data context and provide naturally formatted, insightful responses.
+                </div>
+            </section>
+
+            <!-- Architecture Section -->
+            <section id="architecture" class="section">
+                <h2>🏗️ System Architecture</h2>
+                <p>The NLP Data Chat Client uses a <strong>revolutionary agent-free architecture</strong> for direct, high-performance data analysis.</p>
+
+                <div class="arch-diagram">
+                    <h3 style="color: #3498db; margin-bottom: 1.5rem;">Layered Architecture</h3>
+
+                    <div class="arch-layer">
+                        <h4>🖥️ Layer 1: NLP Data Chat Client <span class="layer-badge">nlp_to_structured_data_chat_client.py</span></h4>
+                        <p>Command-line interface with fast/enhanced modes. Provides interactive sessions, single-message queries, and auto-metadata discovery for CSV, Excel, and JSON data sources.</p>
+                    </div>
+
+                    <div class="arch-arrow-visual">↓</div>
+
+                    <div class="arch-layer">
+                        <h4>🔌 Layer 2: STDIO Protocol <span class="layer-badge">Model Context Protocol</span></h4>
+                        <p>Secure bidirectional communication channel using standard input/output streams. Enables seamless integration with Claude Desktop and MCP-compatible tools.</p>
+                    </div>
+
+                    <div class="arch-arrow-visual">↓</div>
+
+                    <div class="arch-layer">
+                        <h4>⚙️ Layer 3: Structured Data MCP Server <span class="layer-badge">structured_data_analysis_mcp_server.py</span></h4>
+                        <p>FastMCP-based server with direct service integration. Exposes tools for data loading, querying, and analysis without agent middleware overhead.</p>
+                    </div>
+
+                    <div class="arch-arrow-visual">↓</div>
+
+                    <div class="arch-layer">
+                        <h4>🔧 Layer 4: Data Services <span class="layer-badge">CSV, Excel, JSON</span></h4>
+                        <p>Format-specific processing engines with Pandas integration. Direct service calls provide enhanced JSON flattening, intelligent statistics, and ASCII-only output.</p>
+                    </div>
+
+                    <div class="arch-arrow-visual">↓</div>
+
+                    <div class="arch-layer">
+                        <h4>🧠 Layer 5: Claude AI + Data Sources <span class="layer-badge">LLM Service & Files</span></h4>
+                        <p>Claude Bedrock integration with timeout controls for natural language processing. Accesses files and metadata for context-aware, intelligent analysis and insights.</p>
+                    </div>
+                </div>
+
+                <h3>Request Processing Flow</h3>
+                <div class="flow-diagram">
+                    <div class="flow-step">
+                        <div class="step-num">1</div>
+                        <div class="step-content">
+                            <div class="step-title">User Query</div>
+                            <div class="step-desc">User enters natural language query via CLI: <code>--message "Show top customers"</code> or interactive mode</div>
+                        </div>
+                    </div>
+
+                    <div class="flow-step">
+                        <div class="step-num">2</div>
+                        <div class="step-content">
+                            <div class="step-title">Client Processing</div>
+                            <div class="step-desc">Client validates data is loaded, determines mode (fast/enhanced), formats MCP request with metadata context</div>
+                        </div>
+                    </div>
+
+                    <div class="flow-step">
+                        <div class="step-num">3</div>
+                        <div class="step-content">
+                            <div class="step-title">STDIO Transport</div>
+                            <div class="step-desc">MCP request sent via STDIO protocol to server process, ensuring secure isolated communication</div>
+                        </div>
+                    </div>
+
+                    <div class="flow-step">
+                        <div class="step-num">4</div>
+                        <div class="step-content">
+                            <div class="step-title">Server Tool Routing</div>
+                            <div class="step-desc">Server identifies appropriate tool (<code>query_data</code>), extracts parameters, routes to service layer</div>
+                        </div>
+                    </div>
+
+                    <div class="flow-step">
+                        <div class="step-num">5</div>
+                        <div class="step-content">
+                            <div class="step-title">Service Execution</div>
+                            <div class="step-desc">CSV/Excel/JSON service processes data using Pandas, applies filters, generates statistics and preview</div>
+                        </div>
+                    </div>
+
+                    <div class="flow-step">
+                        <div class="step-num">6</div>
+                        <div class="step-content">
+                            <div class="step-title">LLM Enhancement</div>
+                            <div class="step-desc">If enhanced mode: Claude AI formats results with business insights, natural language explanations, and recommendations</div>
+                        </div>
+                    </div>
+
+                    <div class="flow-step">
+                        <div class="step-num">7</div>
+                        <div class="step-content">
+                            <div class="step-title">Response Delivery</div>
+                            <div class="step-desc">Formatted response returned via STDIO, client displays results with proper formatting and context</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert success">
+                    <strong>✨ Key Innovation:</strong> No agent layer! Direct service integration eliminates middleware overhead, providing 3x faster performance (0.2s fast mode) and simplified debugging.
+                </div>
+
+                <div class="alert info">
+                    <strong>💡 Performance Modes:</strong> Fast mode (server-only, 0.2s) for quick exploration. Enhanced mode (with Claude AI, 3-15s) for deep business insights and recommendations.
+                </div>
+
+                <div class="card">
+                    <h3>Component Overview</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Component</th>
+                                <th>Purpose</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>NLP Data Chat Client</td>
+                                <td>Command-line interface with fast/enhanced modes</td>
+                                <td><span class="badge success">Production</span></td>
+                            </tr>
+                            <tr>
+                                <td>Structured Data MCP Server</td>
+                                <td>MCP server with direct service integration</td>
+                                <td><span class="badge success">Production</span></td>
+                            </tr>
+                            <tr>
+                                <td>Data Services</td>
+                                <td>Format-specific data processing (CSV, Excel, JSON)</td>
+                                <td><span class="badge success">Production</span></td>
+                            </tr>
+                            <tr>
+                                <td>LLM Service</td>
+                                <td>Claude AI integration with timeout controls</td>
+                                <td><span class="badge success">Production</span></td>
+                            </tr>
+                            <tr>
+                                <td>Legacy Agents</td>
+                                <td>Old agent-based architecture</td>
+                                <td><span class="badge danger">Removed</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Components Section -->
+            <section id="components" class="section">
+                <h2>🔧 Core Components</h2>
+
+                <div class="card">
+                    <h3>1. NLP Data Chat Client (nlp_to_structured_data_chat_client.py)</h3>
+                    <p><strong>Purpose:</strong> Primary command-line interface with revolutionary single-session architecture</p>
+                    
+                    <h4>Key Features:</h4>
+                    <ul>
+                        <li>🚀 <strong>Fast Mode:</strong> Server-only analysis (0.2s response time)</li>
+                        <li>🧠 <strong>Enhanced Mode:</strong> LLM-powered insights with timeout controls</li>
+                        <li>📊 Multi-format data loading (CSV, Excel, JSON)</li>
+                        <li>🎯 Single persistent session (no session management issues)</li>
+                        <li>🔍 Auto-metadata discovery</li>
+                        <li>💬 Interactive and single-message modes</li>
+                    </ul>
+
+                    <div class="command">python nlp_to_structured_data_chat_client.py --sample sales --message "What's the total revenue?" --fast</div>
+                    <div class="command">python nlp_to_structured_data_chat_client.py --file data.csv --type csv --interactive</div>
+                </div>
+
+                <div class="card">
+                    <h3>2. Structured Data Analysis Server (structured_data_analysis_mcp_server.py)</h3>
+                    <p><strong>Purpose:</strong> Clean MCP server with direct service integration (no agents!)</p>
+                    
+                    <h4>Revolutionary Features:</h4>
+                    <ul>
+                        <li>🎯 <strong>Direct Service Integration:</strong> No agent middleware layer</li>
+                        <li>⚡ <strong>ASCII-Only:</strong> Full compatibility with all systems</li>
+                        <li>🔄 <strong>Enhanced JSON Flattening:</strong> Smart nested data normalization</li>
+                        <li>📈 <strong>Intelligent Statistics:</strong> Automatic data analysis</li>
+                        <li>🛡️ <strong>Error Handling:</strong> Robust error management</li>
+                    </ul>
+
+                    <h4>Available Tools:</h4>
+                    <ul>
+                        <li><code>load_data</code> - Load any supported data format</li>
+                        <li><code>load_sample_data</code> - Load built-in sample datasets</li>
+                        <li><code>query_data</code> - Natural language data queries</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>3. Utils Package</h3>
+                    
+                    <h4>LLM Service (services/llm_service.py)</h4>
+                    <ul>
+                        <li>Claude Bedrock integration with timeout controls</li>
+                        <li>Fast/enhanced mode management</li>
+                        <li>Intelligent response formatting</li>
+                        <li>Context-aware processing</li>
+                    </ul>
+
+                    <h4>MetadataManager (utils/metadata_manager.py)</h4>
+                    <ul>
+                        <li>Auto-discovery of metadata files</li>
+                        <li>JSON/YAML metadata parsing</li>
+                        <li>Business rules and context management</li>
+                        <li>Template generation for new datasets</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Services Section (moved to server docs) -->
+            <section id="services" class="section">
+                <h2>⚙️ Data Services</h2>
+                <div class="card">
+                    <div class="alert info">
+                        <strong>Note:</strong> Detailed data services (CSV/Excel/JSON services) have been moved to the server-specific documentation.
+                        See the server docs for full details: <a class="btn secondary" href="../../../server/nlp_to_structured_data/docs/index.html">Open Server Docs</a>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MCP System Section -->
+            <section id="mcp-system" class="section">
+                <h2>🔌 Model Context Protocol (MCP) System</h2>
+
+                <div class="card">
+                    <h3>What is MCP?</h3>
+                    <p>Model Context Protocol is a standardized way for AI models to interact with external tools and data sources. Our system implements MCP to enable seamless integration with Claude Desktop and other AI platforms.</p>
+                </div>
+
+                <div class="card">
+                    <h3>MCP Tools Available</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Tool Name</th>
+                                <th>Purpose</th>
+                                <th>Parameters</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>load_data</code></td>
+                                <td>Load data from file with metadata</td>
+                                <td>file_path, file_type, metadata_path (optional)</td>
+                            </tr>
+                            <tr>
+                                <td><code>load_sample_data</code></td>
+                                <td>Load built-in sample datasets</td>
+                                <td>data_type (sales, hr, inventory)</td>
+                            </tr>
+                            <tr>
+                                <td><code>query_data</code></td>
+                                <td>Natural language data querying</td>
+                                <td>query</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>Claude Desktop Integration</h3>
+                    <p>To use this system with Claude Desktop:</p>
+                    
+                    <div class="code-block">
+{
+  "mcpServers": {
+    "nlp-structured-data": {
+      "command": "python",
+      "args": [
+    "D:/GenAI/MCP/nlp_to_structured_data/structured_data_analysis_mcp_server.py"
+      ]
+    }
+  }
+}
+</div>
+                    
+                    <div class="alert info">
+                        <strong>💡 Pro Tip:</strong> Once configured, you can use the tools directly in Claude Desktop conversations by mentioning data loading or analysis tasks.
+                    </div>
+                </div>
+            </section>
+
+            <!-- Metadata Section -->
+            <section id="metadata" class="section">
+                <h2>📋 Metadata System</h2>
+
+                <div class="card">
+                    <h3>Why Metadata Matters</h3>
+                    <p>Metadata provides crucial business context that transforms raw data into meaningful insights. It includes column descriptions, business rules, data types, and relationships.</p>
+                </div>
+
+                <div class="card">
+                    <h3>Metadata Structure</h3>
+                    <div class="code-block">
+{
+  "dataset_info": {
+    "name": "Sales Performance Data",
+    "description": "Monthly sales data for analysis",
+    "source": "CRM System",
+    "last_updated": "2025-10-25"
+  },
+  "columns": {
+    "company": {
+      "description": "Customer company name",
+      "data_type": "string",
+      "business_meaning": "Primary customer identifier",
+      "category": "identifier"
+    },
+    "revenue": {
+      "description": "Total sales revenue",
+      "data_type": "float",
+      "unit": "USD",
+      "business_meaning": "Gross revenue in US dollars",
+      "validation_rules": {
+        "min_value": 0,
+        "max_value": 10000000
+      }
+    }
+  },
+  "business_rules": {
+    "data_validation": {
+      "revenue_check": "Revenue should be positive"
+    },
+    "business_logic": {
+      "profit_calculation": "Profit = Revenue - Costs"
+    }
+  }
+}
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>Auto-Discovery Features</h3>
+                    <ul>
+                        <li><strong>File Pattern Matching:</strong> Automatically finds .metadata.json files</li>
+                        <li><strong>Format Support:</strong> JSON and YAML metadata formats</li>
+                        <li><strong>Template Generation:</strong> Creates metadata templates from data structure</li>
+                        <li><strong>Caching:</strong> Efficient metadata caching for performance</li>
+                    </ul>
+
+                    <div class="command">
+# Auto-discovery patterns:
+# data.csv → looks for data.metadata.json
+# data.csv → looks for data_metadata.json  
+# data.csv → looks for metadata.json in same directory
+</div>
+                </div>
+            </section>
+
+            <!-- Sample Data & Metadata Section -->
+            <section id="sample-data" class="section">
+                <h2>📁 Sample Data & Metadata</h2>
+                <p>Ready-to-use sample files to get started quickly. Download these examples to understand the data and metadata structure for different file formats.</p>
+
+                <!-- File Browser Style Layout -->
+                <div class="card">
+                    <h3>📂 Sample Files</h3>
+                    <p>Click any file to download it directly. All files are organized by format type with corresponding metadata.</p>
+                    
+                    <div style="background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; font-family: 'Courier New', monospace;">
+                        <div style="margin-bottom: 15px;">
+                            <strong>📁 samples/</strong>
+                            <div style="margin-left: 20px; margin-top: 8px;">
+                                <strong>📊 csv/</strong>
+                                <div style="margin-left: 20px; margin-top: 5px;">
+                                    <a href="samples/csv/sales_data.csv" style="color: #0066cc; text-decoration: none;">📄 sales_data.csv</a> <span style="color: #666;">- Sales transaction data (10 records)</span><br>
+                                    <a href="samples/csv/sales_data.metadata.json" style="color: #0066cc; text-decoration: none;">📄 sales_data.metadata.json</a> <span style="color: #666;">- CSV metadata with business rules</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <div style="margin-left: 20px;">
+                                <strong>📋 json/</strong>
+                                <div style="margin-left: 20px; margin-top: 5px;">
+                                    <a href="samples/json/products_catalog.json" style="color: #0066cc; text-decoration: none;">📄 products_catalog.json</a> <span style="color: #666;">- Product catalog with ratings (3 products)</span><br>
+                                    <a href="samples/json/products_catalog.metadata.json" style="color: #0066cc; text-decoration: none;">📄 products_catalog.metadata.json</a> <span style="color: #666;">- JSON schema and validation rules</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
+                            <div style="margin-left: 20px;">
+                                <strong>📈 excel/</strong>
+                                <div style="margin-left: 20px; margin-top: 5px;">
+                                    <a href="samples/excel/employee_performance.csv" style="color: #0066cc; text-decoration: none;">📄 employee_performance.csv</a> <span style="color: #666;">- Employee performance data (Excel format as CSV)</span><br>
+                                    <a href="samples/excel/employee_performance.metadata.json" style="color: #0066cc; text-decoration: none;">📄 employee_performance.metadata.json</a> <span style="color: #666;">- Excel metadata with formula definitions</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div style="margin-left: 20px;">
+                                <a href="samples/README.md" style="color: #0066cc; text-decoration: none;">📖 README.md</a> <span style="color: #666;">- Complete documentation and usage examples</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Start Guide -->
+                <div class="card">
+                    <h3>🚀 Quick Start Guide</h3>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+                        <div>
+                            <h4>1. Download & Setup</h4>
+                            <ul class="feature-list">
+                                <li>Right-click any file above and "Save As..."</li>
+                                <li>Create your project structure:</li>
+                            </ul>
+                            <div class="command">mkdir -p data/csv data/json data/excel
+mkdir -p metadata/csv metadata/json metadata/excel</div>
+                        </div>
+                        
+                        <div>
+                            <h4>2. Test with MCP Client</h4>
+                            <div class="command"># Test CSV data
+python nlp_to_structured_data_mcp_client.py \
+  --file data/csv/sales_data.csv \
+  --type csv
+
+# Test JSON data
+python nlp_to_structured_data_mcp_client.py \
+  --file data/json/products_catalog.json \
+  --type json</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sample Queries -->
+                <div class="card">
+                    <h3>💬 Sample Queries to Try</h3>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 15px;">
+                        <div>
+                            <h4>📊 Sales Data (CSV)</h4>
+                            <ul class="feature-list">
+                                <li>"Show top 5 customers by revenue"</li>
+                                <li>"Compare sales rep performance"</li>
+                                <li>"Generate Q4 sales summary"</li>
+                                <li>"What are the trends over time?"</li>
+                            </ul>
+                        </div>
+                        
+                        <div>
+                            <h4>📋 Products (JSON)</h4>
+                            <ul class="feature-list">
+                                <li>"Show all software products"</li>
+                                <li>"Which have highest ratings?"</li>
+                                <li>"Compare product categories"</li>
+                                <li>"List enterprise products"</li>
+                            </ul>
+                        </div>
+                        
+                        <div>
+                            <h4>📈 Employees (Excel)</h4>
+                            <ul class="feature-list">
+                                <li>"Who are top performers?"</li>
+                                <li>"Department performance summary"</li>
+                                <li>"Who exceeded targets?"</li>
+                                <li>"Show rating distribution"</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert info">
+                    <strong>💡 Pro Tip:</strong> The metadata files provide rich context that makes Claude's responses much more intelligent and business-focused. Always include metadata for the best analysis experience!
+                </div>
+            </section>
+
+            <!-- Quick Start Section -->
+            <section id="quickstart" class="section">
+                <h2>🚀 Quick Start Guide</h2>
+
+                <div class="card">
+                    <h3>Step 1: Environment Setup</h3>
+                    <div class="command">
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure Claude AI credentials
+cp .env.template .env
+# Edit .env with your AWS Bedrock credentials
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>Step 2: Test with Sample Data</h3>
+                    <div class="command">
+# Fast mode - instant server analysis
+python nlp_to_structured_data_chat_client.py --sample sales --message "What's the total revenue?" --fast
+
+# Enhanced mode - with LLM insights
+python nlp_to_structured_data_chat_client.py --sample sales --message "Show me top customers"
+
+# Interactive mode
+python nlp_to_structured_data_chat_client.py --sample hr --interactive
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>Step 3: Load Your Own Data</h3>
+                    <div class="command">
+# CSV with auto-metadata discovery
+python nlp_to_structured_data_chat_client.py --file mydata.csv --type csv
+
+# Excel file
+python nlp_to_structured_data_chat_client.py --file mydata.xlsx --type excel
+
+# JSON data with enhanced flattening
+python nlp_to_structured_data_chat_client.py --file mydata.json --type json
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>Step 4: Performance Modes</h3>
+                    <div class="command">
+# Fast mode: Server-only analysis (0.2s)
+python nlp_to_structured_data_chat_client.py --sample inventory --message "Average price?" --fast
+
+# Enhanced mode: LLM-powered insights (3-15s with timeout)
+python nlp_to_structured_data_chat_client.py --sample inventory --message "Business recommendations"
+
+# Interactive mode with both modes available
+python nlp_to_structured_data_chat_client.py --sample sales --interactive
+</div>
+                    
+                    <div class="alert info">
+                        <strong>💡 Pro Tip:</strong> Use fast mode for quick data exploration, enhanced mode for deep business insights!
+                    </div>
+                </div>
+            </section>
+
+            <!-- Examples Section -->
+            <section id="examples" class="section">
+                <h2>💬 Usage Examples & Command Reference</h2>
+
+                <div class="card">
+                    <h3>🚀 Quick Start Examples</h3>
+                    
+                    <h4>Basic Sample Data Loading:</h4>
+                    <div class="command">
+# Load sales sample data with fast analysis
+python nlp_to_structured_data_chat_client.py --sample sales --message "Show me a summary" --fast
+
+# Load HR data with enhanced LLM insights  
+python nlp_to_structured_data_chat_client.py --sample hr --message "Who are the top performers?"
+
+# Load inventory data and start interactive mode
+python nlp_to_structured_data_chat_client.py --sample inventory --interactive
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>📁 File Loading Examples</h3>
+                    
+                    <h4>CSV Files:</h4>
+                    <div class="command">
+# Basic CSV loading
+python nlp_to_structured_data_chat_client.py --file data/sales.csv --type csv
+
+# CSV with specific metadata file
+python nlp_to_structured_data_chat_client.py --file data/sales.csv --type csv --metadata data/sales.metadata.json
+
+# CSV with quick analysis
+python nlp_to_structured_data_chat_client.py --file data/sales.csv --type csv --message "What are the key insights?" --fast
+</div>
+
+                    <h4>Excel Files:</h4>
+                    <div class="command">
+# Basic Excel loading
+python nlp_to_structured_data_chat_client.py --file reports/employee_data.xlsx --type excel
+
+# Excel with immediate query
+python nlp_to_structured_data_chat_client.py --file reports/employee_data.xlsx --type excel --message "Show department performance"
+
+# Excel in interactive mode
+python nlp_to_structured_data_chat_client.py --file reports/employee_data.xlsx --type excel --interactive
+</div>
+
+                    <h4>JSON Files:</h4>
+                    <div class="command">
+# Basic JSON loading (with automatic nested flattening)
+python nlp_to_structured_data_chat_client.py --file api_data/products.json --type json
+
+# JSON with business analysis
+python nlp_to_structured_data_chat_client.py --file api_data/products.json --type json --message "Analyze product performance by category"
+
+# JSON with fast mode for quick structure overview
+python nlp_to_structured_data_chat_client.py --file api_data/products.json --type json --message "Show me the data structure" --fast
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>⚡ Performance Mode Examples</h3>
+                    
+                    <h4>Fast Mode (0.2s response):</h4>
+                    <div class="command">
+# Quick data exploration
+python nlp_to_structured_data_chat_client.py --sample sales --message "How many records?" --fast
+
+# Basic statistics
+python nlp_to_structured_data_chat_client.py --file data.csv --type csv --message "Show basic statistics" --fast
+
+# Data structure overview
+python nlp_to_structured_data_chat_client.py --sample inventory --message "What columns do we have?" --fast
+</div>
+
+                    <h4>Enhanced Mode (3-15s with LLM insights):</h4>
+                    <div class="command">
+# Deep business analysis (default mode)
+python nlp_to_structured_data_chat_client.py --sample sales --message "Provide strategic business recommendations"
+
+# Comparative analysis
+python nlp_to_structured_data_chat_client.py --sample hr --message "Compare department performance and suggest improvements"
+
+# Trend analysis
+python nlp_to_structured_data_chat_client.py --file quarterly_data.csv --type csv --message "Analyze trends and forecast"
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>💬 Interactive Mode Examples</h3>
+                    
+                    <h4>Starting Interactive Sessions:</h4>
+                    <div class="command">
+# Start with sample data
+python nlp_to_structured_data_chat_client.py --sample sales --interactive
+
+# Start with your own file
+python nlp_to_structured_data_chat_client.py --file mydata.csv --type csv --interactive
+
+# Start with Excel file
+python nlp_to_structured_data_chat_client.py --file report.xlsx --type excel --interactive
+</div>
+
+                    <h4>Interactive Commands (inside session):</h4>
+                    <div class="code-block">
+# Once in interactive mode, try these:
+
+⚡ You: Show me the first 5 records
+⚡ You: fast: What's the total revenue?          (Force fast mode)
+⚡ You: What business insights do you see?       (Enhanced mode)
+⚡ You: Compare top 3 customers by sales
+⚡ You: help                                     (Show available commands)
+⚡ You: exit                                     (Exit session)
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>🎯 Advanced Usage Examples</h3>
+                    
+                    <h4>Complex Business Queries:</h4>
+                    <div class="command">
+# Revenue analysis with strategic insights
+python nlp_to_structured_data_chat_client.py --file sales_2024.csv --type csv --message "Analyze revenue trends and identify growth opportunities"
+
+# Performance benchmarking
+python nlp_to_structured_data_chat_client.py --file employee_reviews.xlsx --type excel --message "Identify top performers and improvement areas"
+
+# Product portfolio analysis
+python nlp_to_structured_data_chat_client.py --file product_catalog.json --type json --message "Analyze product mix and recommend optimization"
+</div>
+
+                    <h4>Multi-format Workflow:</h4>
+                    <div class="command">
+# Analyze CSV sales data
+python nlp_to_structured_data_chat_client.py --file q1_sales.csv --type csv --message "Q1 sales summary" --fast
+
+# Cross-reference with Excel budget
+python nlp_to_structured_data_chat_client.py --file q1_budget.xlsx --type excel --message "Compare actuals vs budget"
+
+# Check product data from JSON API
+python nlp_to_structured_data_chat_client.py --file product_feed.json --type json --message "Product performance metrics"
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>📊 Specific Query Examples</h3>
+                    
+                    <h4>Data Exploration:</h4>
+                    <div class="code-block">
+💬 "Show me the first 10 records"
+💬 "What are the column names and data types?"
+💬 "How many rows of data do we have?"
+💬 "Describe this dataset structure"
+💬 "What's the data quality like?"
+💬 "Show me basic statistics for all numeric columns"
+</div>
+
+                    <h4>Business Analytics:</h4>
+                    <div class="code-block">
+💬 "Show me top 5 customers by sales revenue"
+💬 "Analyze sales trends over time"
+💬 "Which sales rep has the best performance?"
+💬 "What products generate the most revenue?"
+💬 "Compare Q1 vs Q2 performance"
+💬 "Identify underperforming segments"
+</div>
+
+                    <h4>Advanced Analysis:</h4>
+                    <div class="code-block">
+💬 "Generate executive dashboard of key metrics"
+💬 "Create a professional business report"
+💬 "Show revenue analysis with strategic recommendations"
+💬 "Identify patterns and anomalies in the data"
+💬 "Provide predictive insights based on historical trends"
+💬 "Compare performance across different dimensions"
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>🔧 Command Line Arguments Reference</h3>
+                    
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Argument</th>
+                                <th>Purpose</th>
+                                <th>Example Usage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>--sample</code></td>
+                                <td>Load built-in sample data</td>
+                                <td><code>--sample sales</code>, <code>--sample hr</code>, <code>--sample inventory</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--file</code></td>
+                                <td>Load your own data file</td>
+                                <td><code>--file data/sales.csv</code>, <code>--file reports/q1.xlsx</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--type</code></td>
+                                <td>Specify file format</td>
+                                <td><code>--type csv</code>, <code>--type excel</code>, <code>--type json</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--metadata</code></td>
+                                <td>Provide metadata file</td>
+                                <td><code>--metadata data/sales.metadata.json</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--message</code></td>
+                                <td>Send single query</td>
+                                <td><code>--message "Show me top customers"</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--fast</code></td>
+                                <td>Force fast mode (0.2s)</td>
+                                <td><code>--fast</code> (combine with --message)</td>
+                            </tr>
+                            <tr>
+                                <td><code>--interactive</code></td>
+                                <td>Start interactive session</td>
+                                <td><code>--interactive</code> or <code>-i</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="alert info">
+                        <strong>💡 Pro Tips:</strong>
+                        <ul>
+                            <li>Use <code>--fast</code> for quick data exploration and basic statistics</li>
+                            <li>Enhanced mode (default) provides AI-powered business insights</li>
+                            <li>Interactive mode lets you ask follow-up questions in the same session</li>
+                            <li>Metadata files enhance AI understanding of your business context</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Testing Section -->
+            <section id="testing" class="section">
+                <h2>🧪 Testing Guide</h2>
+
+                <div class="card">
+                    <h3>🚀 Quick System Test</h3>
+                    <p>Verify your production system works correctly with these commands:</p>
+                    
+                    <h4>1. Fast mode with sales data:</h4>
+                    <div class="command">python nlp_to_structured_data_chat_client.py --sample sales --message "What's the total revenue?" --fast</div>
+                    
+                    <h4>2. Enhanced mode with HR data:</h4>
+                    <div class="command">python nlp_to_structured_data_chat_client.py --sample hr --message "Who are the top performers?"</div>
+                    
+                    <h4>3. JSON data with inventory:</h4>
+                    <div class="command">python nlp_to_structured_data_chat_client.py --sample inventory --message "What's the average price?" --fast</div>
+                </div>
+
+                <div class="card">
+                    <h3>📊 Expected Test Results</h3>
+                    
+                    <h4>✅ Sales Data Test (Fast Mode):</h4>
+                    <ul>
+                        <li>Should load 5 sales records in ~0.2 seconds</li>
+                        <li>Display total revenue calculation</li>
+                        <li>Show basic statistics and data summary</li>
+                    </ul>
+
+                    <h4>✅ HR Data Test (Enhanced Mode):</h4>
+                    <ul>
+                        <li>Should load 5 employee records</li>
+                        <li>Identify top performers by rating/salary</li>
+                        <li>Provide LLM-enhanced business insights</li>
+                    </ul>
+
+                    <h4>✅ Inventory Test (JSON Flattening):</h4>
+                    <ul>
+                        <li>Should load 5 product records</li>
+                        <li>Calculate average price from Value column</li>
+                        <li>Demonstrate nested JSON handling</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>🔍 Performance Benchmarks</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Test Type</th>
+                                <th>Expected Response Time</th>
+                                <th>Memory Usage</th>
+                                <th>Key Features Tested</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Fast Mode</td>
+                                <td>0.2 - 0.5 seconds</td>
+                                <td>< 50MB</td>
+                                <td>Server analysis, statistics</td>
+                            </tr>
+                            <tr>
+                                <td>Enhanced Mode</td>
+                                <td>3 - 15 seconds</td>
+                                <td>< 100MB</td>
+                                <td>LLM integration, insights</td>
+                            </tr>
+                            <tr>
+                                <td>Interactive Mode</td>
+                                <td>Per query basis</td>
+                                <td>< 75MB</td>
+                                <td>Session persistence</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>🎯 Advanced Testing</h3>
+                    
+                    <h4>Test Your Own Data:</h4>
+                    
+                    <h5>• CSV file testing:</h5>
+                    <div class="command">python nlp_to_structured_data_chat_client.py --file yourdata.csv --type csv --message "Describe this data" --fast</div>
+                    
+                    <h5>• Excel file testing:</h5>
+                    <div class="command">python nlp_to_structured_data_chat_client.py --file yourdata.xlsx --type excel --interactive</div>
+                    
+                    <h5>• JSON with nested structures:</h5>
+                    <div class="command">python nlp_to_structured_data_chat_client.py --file yourdata.json --type json --message "Show me the structure"</div>
+
+                    <h4>Interactive Mode Testing:</h4>
+                    
+                    <h5>1. Start interactive session:</h5>
+                    <div class="command">python nlp_to_structured_data_chat_client.py --sample sales --interactive</div>
+                    
+                    <h5>2. Try these queries in sequence:</h5>
+                    <div class="code-block">
+⚡ You: fast: What's the total revenue?      (Force fast mode)
+⚡ You: What business insights do you see?   (Enhanced mode)  
+⚡ You: Show me the top 3 customers         (Auto mode)
+⚡ You: exit                                 (Exit session)
+</div>
+                </div>
+
+                <div class="alert success">
+                    <strong>🎉 Success Indicators:</strong>
+                    <ul>
+                        <li>✅ Data loads successfully with statistics displayed</li>
+                        <li>✅ Fast mode responds in under 1 second</li>
+                        <li>✅ Enhanced mode provides business insights</li>
+                        <li>✅ No agent-related errors (agents are eliminated!)</li>
+                        <li>✅ Session persists data between queries in interactive mode</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- API Reference Section -->
+            <section id="api-reference" class="section">
+                <h2>📚 API Reference</h2>
+
+                <div class="card">
+                    <h3>Command Line Arguments</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Argument</th>
+                                <th>Description</th>
+                                <th>Example</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>--file</code></td>
+                                <td>Path to data file</td>
+                                <td><code>--file data.csv</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--type</code></td>
+                                <td>Data format (csv, excel, json)</td>
+                                <td><code>--type csv</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--metadata</code></td>
+                                <td>Path to metadata file</td>
+                                <td><code>--metadata data.metadata.json</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--sample</code></td>
+                                <td>Load sample data</td>
+                                <td><code>--sample sales</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--fast</code></td>
+                                <td>Fast mode: server analysis only (0.2s)</td>
+                                <td><code>--fast</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--interactive</code></td>
+                                <td>Start interactive mode</td>
+                                <td><code>--interactive</code></td>
+                            </tr>
+                            <tr>
+                                <td><code>--message</code></td>
+                                <td>Single message to send</td>
+                                <td><code>--message "top customers"</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>Sample Data Types</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Sample Type</th>
+                                <th>Description</th>
+                                <th>Records</th>
+                                <th>Use Case</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>sales</code></td>
+                                <td>B2B software sales data</td>
+                                <td>5 transactions</td>
+                                <td>Sales analysis, customer insights</td>
+                            </tr>
+                            <tr>
+                                <td><code>hr</code></td>
+                                <td>HR performance data</td>
+                                <td>5 employees</td>
+                                <td>HR analytics, compensation</td>
+                            </tr>
+                            <tr>
+                                <td><code>inventory</code></td>
+                                <td>Product catalog (JSON)</td>
+                                <td>5 products</td>
+                                <td>Product management, inventory</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>Performance Modes</h3>
+                    <ul>
+                        <li><strong>fast</strong> - Server-only analysis (0.2s response time)</li>
+                        <li><strong>enhanced</strong> - LLM-powered insights with timeout controls (3-15s)</li>
+                        <li><strong>interactive</strong> - Combined mode with session persistence</li>
+                    </ul>
+                    
+                    <div class="alert info">
+                        <strong>💡 Mode Selection:</strong> Use --fast for quick data exploration, enhanced mode (default) for deep business insights, and --interactive for conversational analysis.
+                    </div>
+                </div>
+            </section>
+
+            <!-- Troubleshooting Section -->
+            <section id="troubleshooting" class="section">
+                <h2>🛠️ Troubleshooting</h2>
+
+                <div class="card">
+                    <h3>Common Issues</h3>
+                    
+                    <h4>1. "Failed to initialize Claude Bedrock"</h4>
+                    <div class="alert warning">
+                        <strong>Solution:</strong>
+                        <ul>
+                            <li>Check your .env file has correct AWS credentials</li>
+                            <li>Verify AWS Bedrock access permissions</li>
+                            <li>Ensure AWS region is correctly configured</li>
+                        </ul>
+                    </div>
+
+                    <h4>2. "MCP server not responding"</h4>
+                    <div class="alert warning">
+                        <strong>Solution:</strong>
+                        <ul>
+                            <li>Check Python path in Claude Desktop config</li>
+                            <li>Verify all dependencies are installed</li>
+                            <li>Restart Claude Desktop application</li>
+                        </ul>
+                    </div>
+
+                    <h4>3. "Unsupported file type"</h4>
+                    <div class="alert info">
+                        <strong>Solution:</strong>
+                        <ul>
+                            <li>Verify file extension matches --type parameter</li>
+                            <li>Check if file format is supported (csv, excel, json)</li>
+                            <li>Ensure file is not corrupted</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Debug Mode</h3>
+                    <p>For detailed troubleshooting information:</p>
+                    <div class="command">
+# Run with verbose logging
+export DEBUG=1
+python nlp_to_structured_data_mcp_client.py --sample sales --query "test"
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>System Requirements</h3>
+                    <ul>
+                        <li><strong>Python:</strong> 3.8 or higher</li>
+                        <li><strong>Memory:</strong> 4GB RAM minimum</li>
+                        <li><strong>Dependencies:</strong> See requirements.txt</li>
+                        <li><strong>AWS:</strong> Bedrock access required for Claude AI</li>
+                    </ul>
+                </div>
+
+                <div class="alert success">
+                    <strong>💡 Pro Tips:</strong>
+                    <ul>
+                        <li>Start with sample data to verify system works</li>
+                        <li>Use simple queries first, then gradually increase complexity</li>
+                        <li>Check metadata files are properly formatted JSON/YAML</li>
+                        <li>Ensure data files are not locked by other applications</li>
+                    </ul>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

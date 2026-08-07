@@ -1,0 +1,80 @@
+JSON Data Analysis Guide
+
+OVERVIEW:
+This system provides comprehensive JSON data analysis with support for nested structures, 
+arrays, and complex object hierarchies commonly found in API responses and NoSQL databases.
+
+JSON-SPECIFIC CAPABILITIES:
+1. Nested Structure Analysis
+   - Deep object traversal and flattening
+   - Array element analysis
+   - Hierarchical relationship mapping
+   - Schema inference from structure
+
+2. Dynamic Schema Handling
+   - Automatic schema detection
+   - Schema evolution tracking
+   - Missing field pattern analysis
+   - Data type inference
+
+3. API Data Processing
+   - REST API response analysis
+   - Pagination handling
+   - Error response processing
+   - Rate limiting consideration
+
+JSON DATA PATTERNS:
+- API responses (REST, GraphQL)
+- Configuration files
+   - Document databases (MongoDB-style)
+- Log files and event streams
+- Product catalogs and inventories
+
+QUERY PATTERNS FOR JSON:
+- "Extract all [field_name] values from nested objects"
+- "Analyze the structure of [array_field]"
+- "Find patterns in [nested.field.path]"
+- "Count occurrences of [field] across all records"
+- "Show unique values in [array_field[].subfield]"
+
+NESTED DATA NAVIGATION:
+- Dot notation for nested access
+- Array indexing and filtering
+- Recursive field extraction
+- Cross-reference analysis
+
+JSON-SPECIFIC ANALYSIS:
+- Schema validation and documentation
+- Nested aggregations
+- Array length distributions
+- Field presence analysis
+- Data type consistency checks
+
+API DATA INSIGHTS:
+- Response time patterns
+- Error rate analysis
+- Data completeness metrics
+- Field usage statistics
+- Schema drift detection
+
+DATA TRANSFORMATION:
+- Flattening nested structures
+- Array element extraction
+- Object key normalization
+- Type conversion handling
+- Missing value imputation
+
+BUSINESS CONTEXT FOR JSON:
+- User behavior tracking
+- Product recommendation data
+- Transaction processing
+- Content management
+- Configuration management
+
+METADATA INTEGRATION:
+JSON analysis benefits from:
+- Field definition schemas
+- Business rule documentation
+- API endpoint specifications
+- Data lineage information
+- Validation rule definitions

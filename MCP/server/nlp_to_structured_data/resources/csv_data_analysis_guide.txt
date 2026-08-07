@@ -1,0 +1,54 @@
+CSV Data Analysis Guide
+
+OVERVIEW:
+This system provides natural language querying capabilities for CSV data analysis.
+Supports filtering, aggregation, search, and insights generation with both automated and LLM-enhanced analysis.
+
+CORE CAPABILITIES:
+1. Data Loading and Validation
+   - Auto-detection of encoding and delimiters
+   - Metadata integration and auto-discovery
+   - Business context enrichment
+
+2. Query Processing
+   - Natural language filters and conditions
+   - Aggregations and grouping operations
+   - Pattern recognition and search
+
+3. Data Analysis Methods
+   - Statistical summaries and insights
+   - Column-level analysis
+   - Data quality assessment
+   - Business rule validation
+
+METADATA INTEGRATION:
+- External metadata files (.json, .yaml) for business context
+- Auto-discovery patterns: filename.metadata.json, filename_metadata.yaml
+- Column definitions, business meanings, constraints
+- Business rules and validation logic
+
+QUERY PATTERNS:
+- "Show me all records where [condition]"
+- "Calculate [aggregation] by [grouping]" 
+- "Find patterns in [column]"
+- "Compare [entity1] vs [entity2]"
+- "What insights can you provide about [topic]?"
+
+ANALYSIS MODES:
+- Single LLM: Raw data returned for Claude Desktop analysis (recommended)
+- Double LLM: Agent performs analysis using embedded intelligence
+- Hybrid: Combines statistical analysis with LLM insights
+
+DATA QUALITY FEATURES:
+- Missing value detection and handling
+- Duplicate identification
+- Data type validation
+- Outlier detection
+- Consistency checks
+
+BUSINESS CONTEXT:
+When metadata is available, analysis includes:
+- Business meanings for technical fields
+- Domain-specific validation rules
+- Regulatory compliance checks
+- Industry best practices

@@ -1,0 +1,51 @@
+# PMO MCP Server Configuration
+# This file contains all configurable settings for the PMO MCP server
+
+# API Configuration
+api:
+  base_url: "http://localhost:5000"
+  timeout: 30  # seconds
+  retry_attempts: 3
+  retry_delay: 1  # seconds
+
+# Server Configuration
+server:
+  name: "PMO"
+  version: "1.0.0"
+  debug: false
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Metadata Configuration
+metadata:
+  directory: "metadata"
+  cache_enabled: true
+  auto_reload: false
+
+# Validation Configuration
+validation:
+  strict_mode: true  # Enforce all validation rules
+  date_format: "%Y-%m-%d"
+  allowed_intervals:
+    - "Weekly"
+    - "Monthly"
+    - "Quarterly"
+
+# Prompt Configuration
+prompts:
+  directory: "config/prompts"
+  enable_hot_reload: false
+  default_language: "en"
+
+# Logging Configuration
+logging:
+  enabled: true
+  file: "logs/pmo_mcp_server.log"
+  max_file_size_mb: 10
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Performance Configuration
+performance:
+  enable_caching: true
+  cache_ttl_seconds: 300
+  max_concurrent_requests: 10

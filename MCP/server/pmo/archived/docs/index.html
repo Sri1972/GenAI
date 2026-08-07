@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PMO MCP Server - Complete Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            min-height: 100vh;
+            box-shadow: 0 0 50px rgba(0,0,0,0.1);
+            display: flex;
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            width: 320px;
+            background: #2c3e50;
+            color: white;
+            padding: 2rem 0;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar h1 {
+            font-size: 1.3rem;
+            margin-bottom: 2rem;
+            padding: 0 1.5rem;
+            color: #3498db;
+            border-bottom: 2px solid #34495e;
+            padding-bottom: 1rem;
+            line-height: 1.2;
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-menu li {
+            margin-bottom: 0.5rem;
+        }
+
+        .nav-menu a {
+            display: block;
+            color: #ecf0f1;
+            text-decoration: none;
+            padding: 0.75rem 1.5rem;
+            transition: all 0.3s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-menu a:hover, .nav-menu a.active {
+            background: #34495e;
+            border-left-color: #3498db;
+            color: #3498db;
+        }
+
+        .nav-submenu {
+            list-style: none;
+            padding-left: 2rem;
+        }
+
+        .nav-submenu a {
+            font-size: 0.9rem;
+            padding: 0.5rem 1.5rem;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            margin-left: 320px;
+            padding: 2rem 3rem;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem 0;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(52, 152, 219, 0.3);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .section {
+            display: none;
+            margin-bottom: 3rem;
+        }
+
+        .section.active {
+            display: block;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section h2 {
+            color: #2c3e50;
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 0.5rem;
+        }
+
+        .section h3 {
+            color: #34495e;
+            font-size: 1.5rem;
+            margin: 2rem 0 1rem 0;
+        }
+
+        .section h4 {
+            color: #7f8c8d;
+            font-size: 1.2rem;
+            margin: 1.5rem 0 0.5rem 0;
+        }
+
+        .card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 2rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        .code-block {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 1.5rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            margin: 1rem 0;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .code-block::before {
+            content: '💻 Code';
+            position: absolute;
+            top: 0.5rem;
+            right: 1rem;
+            font-size: 0.8rem;
+            color: #3498db;
+        }
+
+        .command {
+            background: #27ae60;
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            margin: 1rem 0;
+        }
+
+        .command::before {
+            content: '$ ';
+            color: #2ecc71;
+            font-weight: bold;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .feature-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .architecture-diagram {
+            background: white;
+            border: 2px solid #3498db;
+            border-radius: 10px;
+            padding: 2rem;
+            margin: 2rem 0;
+            text-align: center;
+        }
+
+        .flow-chart {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 1rem 0;
+        }
+
+        .flow-item {
+            background: #3498db;
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            flex: 1;
+            margin: 0 0.5rem;
+            text-align: center;
+        }
+
+        .flow-arrow {
+            font-size: 2rem;
+            color: #3498db;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #3498db;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin: 0.25rem;
+        }
+
+        .badge.success { background: #27ae60; }
+        .badge.warning { background: #f39c12; }
+        .badge.danger { background: #e74c3c; }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .table th,
+        .table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .table th {
+            background: #3498db;
+            color: white;
+            font-weight: 600;
+        }
+
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            border-left: 4px solid;
+        }
+
+        .alert.info {
+            background: #e3f2fd;
+            border-color: #2196f3;
+            color: #1976d2;
+        }
+
+        .alert.success {
+            background: #e8f5e8;
+            border-color: #4caf50;
+            color: #388e3c;
+        }
+
+        .alert.warning {
+            background: #fff3e0;
+            border-color: #ff9800;
+            color: #f57c00;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .btn.secondary {
+            background: #95a5a6;
+        }
+
+        .btn.secondary:hover {
+            background: #7f8c8d;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 1rem;
+            }
+
+            .container {
+                flex-direction: column;
+            }
+
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .flow-chart {
+                flex-direction: column;
+            }
+
+            .flow-arrow {
+                transform: rotate(90deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <h1>🏢 PMO MCP Server</h1>
+            <ul class="nav-menu">
+                <li><a href="#overview" class="nav-link active">🌟 Overview</a></li>
+                <li><a href="#architecture" class="nav-link">🏗️ Architecture</a></li>
+                <li><a href="#tools-reference" class="nav-link">🔧 Tools Reference</a>
+                    <ul class="nav-submenu">
+                        <li><a href="#metadata-tools" class="nav-link">📋 Metadata Tools</a></li>
+                        <li><a href="#project-tools" class="nav-link">📊 Project Tools</a></li>
+                        <li><a href="#resource-tools" class="nav-link">👥 Resource Tools</a></li>
+                        <li><a href="#business-tools" class="nav-link">🏛️ Business Tools</a></li>
+                    </ul>
+                </li>
+                <li><a href="#metadata-system" class="nav-link">📁 Metadata System</a></li>
+                <li><a href="#quickstart" class="nav-link">🚀 Quick Start</a></li>
+                <li><a href="#examples" class="nav-link">💬 Examples</a></li>
+                <li><a href="#api-reference" class="nav-link">📚 API Reference</a></li>
+                <li><a href="#troubleshooting" class="nav-link">🛠️ Troubleshooting</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>🏢 PMO MCP Server</h1>
+                <p>Project & Resource Management Made Intelligent</p>
+                <p>Model Context Protocol server for LLM-powered PMO operations</p>
+            </div>
+
+            <!-- Overview Section -->
+            <section id="overview" class="section active">
+                <h2>🌟 System Overview</h2>
+                
+                <div class="card">
+                    <h3>What is the PMO MCP Server?</h3>
+                    <p>The PMO MCP Server is a Model Context Protocol server that exposes intelligent Project & Resource Management tools to LLM clients like Claude Desktop. It provides a comprehensive suite of tools for managing projects, resources, allocations, and organizational structures with metadata-driven intelligence.</p>
+                    
+                    <div class="alert success">
+                        <strong>🚀 Key Innovation:</strong> Metadata-driven architecture that enriches every tool response with business context, field validation, and intelligent insights!
+                    </div>
+                </div>
+
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">📊</div>
+                        <h4>Project Management</h4>
+                        <p>Complete project lifecycle management with timeline tracking and portfolio analysis</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">👥</div>
+                        <h4>Resource Management</h4>
+                        <p>Capacity planning, allocation tracking, and resource optimization tools</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📋</div>
+                        <h4>Metadata Intelligence</h4>
+                        <p>Rich metadata system providing business context and validation rules</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔌</div>
+                        <h4>MCP Integration</h4>
+                        <p>Seamless integration with Claude Desktop and other LLM platforms</p>
+                    </div>
+                </div>
+
+                <div class="alert info">
+                    <strong>💡 Business Value:</strong> Transform your PMO operations with AI-powered insights, automated reporting, and intelligent resource planning that understands your business context.
+                </div>
+            </section>
+
+            <!-- Architecture Section -->
+            <section id="architecture" class="section">
+                <h2>🏗️ System Architecture</h2>
+
+                <div class="architecture-diagram">
+                    <h3>PMO MCP Server Architecture Flow</h3>
+                    
+                    <!-- Main Architecture Flow -->
+                    <div style="background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px; padding: 2rem; margin: 2rem 0; border: 2px solid #3498db;">
+                        <!-- Client Layer -->
+                        <div style="text-align: center; margin-bottom: 2rem;">
+                            <div style="background: #e74c3c; color: white; padding: 1.5rem; border-radius: 10px; display: inline-block; min-width: 300px; box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);">
+                                <strong>🤖 LLM Client Layer</strong><br>
+                                <span style="font-size: 0.9rem;">Claude Desktop • pmo_client_LLM_unified.py</span><br>
+                                <span style="font-size: 0.8rem; opacity: 0.9;">Anthropic Claude • AWS Bedrock • OpenAI GPT • Google Gemini</span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; font-size: 2rem; color: #3498db; margin: 1rem 0;">↓</div>
+                        
+                        <!-- MCP Protocol Layer -->
+                        <div style="text-align: center; margin-bottom: 2rem;">
+                            <div style="background: #9b59b6; color: white; padding: 1.5rem; border-radius: 10px; display: inline-block; min-width: 300px; box-shadow: 0 5px 15px rgba(155, 89, 182, 0.3);">
+                                <strong>🔌 Model Context Protocol</strong><br>
+                                <span style="font-size: 0.9rem;">Stdio Transport • JSON-RPC Communication</span><br>
+                                <span style="font-size: 0.8rem; opacity: 0.9;">Tools • Resources • Prompts</span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; font-size: 2rem; color: #3498db; margin: 1rem 0;">↓</div>
+                        
+                        <!-- MCP Server Layer -->
+                        <div style="text-align: center; margin-bottom: 2rem;">
+                            <div style="background: #3498db; color: white; padding: 1.5rem; border-radius: 10px; display: inline-block; min-width: 300px; box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);">
+                                <strong>🏢 PMO MCP Server</strong><br>
+                                <span style="font-size: 0.9rem;">pmo_comprehensive.py • FastMCP Framework</span><br>
+                                <span style="font-size: 0.8rem; opacity: 0.9;">16 Tools • 3 Prompts • 7 Resources</span>
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: center; align-items: center; margin: 2rem 0;">
+                            <div style="font-size: 2rem; color: #3498db;">↙</div>
+                            <div style="font-size: 2rem; color: #3498db; margin: 0 2rem;">↓</div>
+                            <div style="font-size: 2rem; color: #3498db;">↘</div>
+                        </div>
+                        
+                        <!-- Component Layer -->
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                            <div style="background: #f39c12; color: white; padding: 1rem; border-radius: 8px; text-align: center; box-shadow: 0 3px 10px rgba(243, 156, 18, 0.3);">
+                                <strong>📋 Metadata System</strong><br>
+                                <span style="font-size: 0.8rem;">metadata/*.json</span><br>
+                                <span style="font-size: 0.7rem; opacity: 0.9;">Business Rules • Validation • Context</span>
+                            </div>
+                            <div style="background: #27ae60; color: white; padding: 1rem; border-radius: 8px; text-align: center; box-shadow: 0 3px 10px rgba(39, 174, 96, 0.3);">
+                                <strong>🔧 MCP Components</strong><br>
+                                <span style="font-size: 0.8rem;">@mcp.tool() decorators</span><br>
+                                <span style="font-size: 0.7rem; opacity: 0.9;">Tools • Resources • Prompts</span>
+                            </div>
+                            <div style="background: #8e44ad; color: white; padding: 1rem; border-radius: 8px; text-align: center; box-shadow: 0 3px 10px rgba(142, 68, 173, 0.3);">
+                                <strong>🌐 HTTP Client</strong><br>
+                                <span style="font-size: 0.8rem;">requests library</span><br>
+                                <span style="font-size: 0.7rem; opacity: 0.9;">API Calls • Error Handling</span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; font-size: 2rem; color: #3498db; margin: 1rem 0;">↓</div>
+                        
+                        <!-- Backend Layer -->
+                        <div style="text-align: center; margin-bottom: 2rem;">
+                            <div style="background: #34495e; color: white; padding: 1.5rem; border-radius: 10px; display: inline-block; min-width: 300px; box-shadow: 0 5px 15px rgba(52, 73, 94, 0.3);">
+                                <strong>🚀 PMO API Backend</strong><br>
+                                <span style="font-size: 0.9rem;">http://localhost:5000 • REST API</span><br>
+                                <span style="font-size: 0.8rem; opacity: 0.9;">Projects • Resources • Allocations • Business Lines</span>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; font-size: 2rem; color: #3498db; margin: 1rem 0;">↓</div>
+                        
+                        <!-- Database Layer -->
+                        <div style="text-align: center;">
+                            <div style="background: #95a5a6; color: white; padding: 1.5rem; border-radius: 10px; display: inline-block; min-width: 300px; box-shadow: 0 5px 15px rgba(149, 165, 166, 0.3);">
+                                <strong>🗄️ PMO Database</strong><br>
+                                <span style="font-size: 0.9rem;">Project Data • Resource Data • Allocation Data</span><br>
+                                <span style="font-size: 0.8rem; opacity: 0.9;">Business Line Hierarchy • Portfolio Structure</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert success" style="margin-top: 1rem;">
+                        <strong>✨ Architecture Benefits:</strong> Metadata-driven responses provide rich business context, validation, and intelligent field descriptions for every tool interaction.
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>📊 MCP Component Interaction Flow</h3>
+                    <div style="background: #f8f9fa; border-radius: 10px; padding: 2rem; border: 1px solid #e9ecef;">
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 2rem;">
+                            <!-- Tools Column -->
+                            <div>
+                                <h4 style="color: #3498db; text-align: center; margin-bottom: 1rem;">🔧 MCP Tools (16)</h4>
+                                <div style="background: white; border-radius: 8px; padding: 1rem; border: 2px solid #3498db;">
+                                    <div style="font-size: 0.9rem; line-height: 1.6;">
+                                        <strong>Metadata Tools:</strong><br>
+                                        • get_api_field_definitions<br>
+                                        • get_api_endpoints_summary<br><br>
+                                        
+                                        <strong>Project Tools:</strong><br>
+                                        • get_all_projects<br>
+                                        • get_project_by_id<br>
+                                        • get_projects_dynamic_filter<br>
+                                        • get_project_resource_allocation<br><br>
+                                        
+                                        <strong>Resource Tools:</strong><br>
+                                        • get_all_resources<br>
+                                        • get_resource_capacity_allocation<br><br>
+                                        
+                                        <strong>Business Tools:</strong><br>
+                                        • get_business_lines<br>
+                                        • get_strategic_portfolios
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Resources & Prompts Column -->
+                            <div>
+                                <h4 style="color: #27ae60; text-align: center; margin-bottom: 1rem;">📚 MCP Resources & Prompts</h4>
+                                <div style="background: white; border-radius: 8px; padding: 1rem; border: 2px solid #27ae60;">
+                                    <div style="font-size: 0.9rem; line-height: 1.6;">
+                                        <strong>Resources (7):</strong><br>
+                                        • pmo://docs/projects_overview<br>
+                                        • pmo://docs/resources_overview<br>
+                                        • pmo://docs/allocations_overview<br>
+                                        • pmo://docs/business_lines_overview<br>
+                                        • pmo://docs/metadata_guide<br>
+                                        • pmo://docs/api_endpoints<br>
+                                        • pmo://docs/usage_examples<br><br>
+                                        
+                                        <strong>Prompts (3):</strong><br>
+                                        • project_overview<br>
+                                        • resource_utilization_analysis<br>
+                                        • portfolio_deep_dive
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; margin: 2rem 0;">
+                            <div style="background: #f39c12; color: white; padding: 1rem; border-radius: 8px; display: inline-block;">
+                                <strong>🧠 Metadata Intelligence Layer</strong><br>
+                                <span style="font-size: 0.9rem;">Enriches every tool response with business context, validation rules, and field descriptions</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>🤖 Client Integration Details</h3>
+                    <div style="background: #e8f4f8; border-radius: 10px; padding: 1.5rem; border-left: 4px solid #3498db;">
+                        <h4>pmo_client_LLM_unified.py Features:</h4>
+                        <ul style="line-height: 1.8;">
+                            <li><strong>Multi-LLM Support:</strong> Anthropic Claude, AWS Bedrock, OpenAI GPT, Google Gemini</li>
+                            <li><strong>MCP Integration:</strong> Stdio client for seamless MCP server communication</li>
+                            <li><strong>Session Management:</strong> Persistent chat sessions with memory</li>
+                            <li><strong>Error Handling:</strong> Comprehensive error management and recovery</li>
+                            <li><strong>Unicode Support:</strong> Windows-compatible UTF-8 encoding</li>
+                            <li><strong>Async Operations:</strong> Non-blocking MCP communication</li>
+                            <li><strong>Environment Configuration:</strong> Flexible LLM provider setup</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Component Overview</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Component</th>
+                                <th>Purpose</th>
+                                <th>Status</th>
+                                <th>Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>PMO MCP Server</td>
+                                <td>FastMCP server with comprehensive PMO operations</td>
+                                <td><span class="badge success">Production</span></td>
+                                <td>16 tools</td>
+                            </tr>
+                            <tr>
+                                <td>MCP Resources</td>
+                                <td>Documentation and help resources</td>
+                                <td><span class="badge success">Production</span></td>
+                                <td>7 resources</td>
+                            </tr>
+                            <tr>
+                                <td>MCP Prompts</td>
+                                <td>Pre-configured analysis workflows</td>
+                                <td><span class="badge success">Production</span></td>
+                                <td>3 prompts</td>
+                            </tr>
+                            <tr>
+                                <td>Metadata System</td>
+                                <td>JSON metadata files with business rules and validation</td>
+                                <td><span class="badge success">Production</span></td>
+                                <td>7 metadata files</td>
+                            </tr>
+                            <tr>
+                                <td>PMO API Backend</td>
+                                <td>REST API providing project and resource data</td>
+                                <td><span class="badge success">Production</span></td>
+                                <td>20+ endpoints</td>
+                            </tr>
+                            <tr>
+                                <td>Unified LLM Client</td>
+                                <td>Multi-provider LLM client with MCP integration</td>
+                                <td><span class="badge success">Production</span></td>
+                                <td>4 LLM providers</td>
+                            </tr>
+                            <tr>
+                                <td>Documentation System</td>
+                                <td>Auto-generated HTML docs for all tools</td>
+                                <td><span class="badge success">Production</span></td>
+                                <td>21 HTML pages</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Tools Reference Section -->
+            <section id="tools-reference" class="section">
+                <h2>🔧 MCP Tools Reference</h2>
+
+                <div class="card">
+                    <h3>Tool Categories Overview</h3>
+                    <p>The PMO MCP Server provides 16 specialized tools organized into 4 main categories. Each tool is enhanced with metadata-driven intelligence for rich business context.</p>
+                    
+                    <div class="feature-grid">
+                      <div class="feature-card">
+                        <a href="metadata.html" style="text-decoration: none; color: inherit;">
+                          <div class="feature-icon">📋</div>
+                          <h4>Metadata Tools</h4>
+                          <p>API field definitions and endpoint summaries (2 tools)</p>
+                        </a>
+                      </div>
+                      <div class="feature-card">
+                        <a href="projects.html" style="text-decoration: none; color: inherit;">
+                          <div class="feature-icon">📊</div>
+                          <h4>Project Tools</h4>
+                          <p>Project management and portfolio operations (6 tools)</p>
+                        </a>
+                      </div>
+                      <div class="feature-card">
+                        <a href="resources.html" style="text-decoration: none; color: inherit;">
+                          <div class="feature-icon">👥</div>
+                          <h4>Resource Tools</h4>
+                          <p>Resource management and capacity allocation (5 tools)</p>
+                        </a>
+                      </div>
+                      <div class="feature-card">
+                        <a href="business.html" style="text-decoration: none; color: inherit;">
+                          <div class="feature-icon">🏛️</div>
+                          <h4>Business Structure</h4>
+                          <p>Organizational hierarchy and portfolio management (3 tools)</p>
+                        </a>
+                      </div>
+                    </div>
+                </div>
+
+                <!-- Tool Categories Subsections -->
+                <div id="metadata-tools" class="card">
+                    <h3>📋 Metadata Tools</h3>
+                    <p>Tools for accessing API metadata, field definitions, and endpoint information</p>
+                    
+                    <table class="table">
+                        <thead>
+                            <tr><th>Tool</th><th>Purpose</th><th>Quick Example</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><a href="get_api_field_definitions.html">get_api_field_definitions</a></td>
+                                <td>Get comprehensive field definitions for entities</td>
+                                <td><code>entity_type="project"</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_api_endpoints_summary.html">get_api_endpoints_summary</a></td>
+                                <td>Get summary of all available PMO API endpoints</td>
+                                <td><code>No parameters</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="project-tools" class="card">
+                    <h3>📊 Project Management Tools</h3>
+                    <p>Complete project lifecycle management with portfolio analysis</p>
+                    
+                    <table class="table">
+                        <thead>
+                            <tr><th>Tool</th><th>Purpose</th><th>Quick Example</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><a href="get_all_projects.html">get_all_projects</a></td>
+                                <td>Get all projects with complete details</td>
+                                <td><code>No parameters</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_project_by_id.html">get_project_by_id</a></td>
+                                <td>Get specific project by ID</td>
+                                <td><code>project_id=123</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_project_by_name.html">get_project_by_name</a></td>
+                                <td>Find project by name</td>
+                                <td><code>project_name="Data Migration"</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_projects_by_portfolio_and_product_line.html">get_projects_by_portfolio_and_product_line</a></td>
+                                <td>Filter projects by portfolio/product line</td>
+                                <td><code>strategic_portfolio="Market & Sell"</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_projects_dynamic_filter.html">get_projects_dynamic_filter</a></td>
+                                <td>Advanced project filtering with custom conditions</td>
+                                <td><code>filters=[{"column": "status", "operator": "=", "value": "Active"}]</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_project_resource_allocation.html">get_project_resource_allocation</a></td>
+                                <td>Get resource allocation for specific project</td>
+                                <td><code>project_id=123, interval="Monthly"</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="resource-tools" class="card">
+                    <h3>👥 Resource Management Tools</h3>
+                    <p>Comprehensive resource management with capacity planning and allocation tracking</p>
+                    
+                    <table class="table">
+                        <thead>
+                            <tr><th>Tool</th><th>Purpose</th><th>Quick Example</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><a href="get_all_resources.html">get_all_resources</a></td>
+                                <td>Get all resources with details</td>
+                                <td><code>No parameters</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_resource_by_id.html">get_resource_by_id</a></td>
+                                <td>Get specific resource by ID</td>
+                                <td><code>resource_id=456</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_resource_by_name.html">get_resource_by_name</a></td>
+                                <td>Find resource by name</td>
+                                <td><code>resource_name="John Smith"</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_resource_capacity_allocation.html">get_resource_capacity_allocation</a></td>
+                                <td>Get capacity allocation for specific resource</td>
+                                <td><code>resource_id=456, start_date="2025-01-01", end_date="2025-03-31"</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_resources_by_portfolio_allocation.html">get_resources_by_portfolio_allocation</a></td>
+                                <td>Get allocation by portfolio/product line</td>
+                                <td><code>strategic_portfolio="Plan & Build"</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="business-tools" class="card">
+                    <h3>🏛️ Business Structure Tools</h3>
+                    <p>Organizational hierarchy and portfolio management tools</p>
+                    
+                    <table class="table">
+                        <thead>
+                            <tr><th>Tool</th><th>Purpose</th><th>Quick Example</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><a href="get_business_lines.html">get_business_lines</a></td>
+                                <td>Get organizational structure (portfolios & product lines)</td>
+                                <td><code>No parameters</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_strategic_portfolios.html">get_strategic_portfolios</a></td>
+                                <td>Get list of strategic portfolios</td>
+                                <td><code>No parameters</code></td>
+                            </tr>
+                            <tr>
+                                <td><a href="get_product_lines_by_portfolio.html">get_product_lines_by_portfolio</a></td>
+                                <td>Get product lines for specific portfolio</td>
+                                <td><code>strategic_portfolio="Auto Insights"</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Metadata System Section -->
+            <section id="metadata-system" class="section">
+                <h2>📁 Metadata System</h2>
+
+                <div class="card">
+                    <h3>Why Metadata Drives Intelligence</h3>
+                    <p>The PMO MCP Server's metadata system is what makes it truly intelligent. Every tool response is enriched with business context, field descriptions, validation rules, and relationship information derived from comprehensive JSON metadata files.</p>
+                    
+                    <div class="alert success">
+                        <strong>🧠 Intelligent Features:</strong> Field validation, business meaning context, constraint checking, enum value suggestions, and relationship mapping - all driven by metadata!
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Metadata File Structure</h3>
+                    <div class="code-block">
+{
+  "title": "PMO Projects API",
+  "description": "Project management endpoints and data schemas",
+  "api_endpoints": {
+    "/projects": {
+      "method": "GET",
+      "summary": "Get all projects",
+      "business_meaning": "Master project registry for portfolio management"
+    }
+  },
+  "data_dictionary": {
+    "project": {
+      "project_id": {
+        "description": "Unique identifier for the project",
+        "type": "integer",
+        "constraints": {
+          "required": true,
+          "unique": true
+        },
+        "business_meaning": "Primary key for project entity"
+      },
+      "project_status": {
+        "description": "Current status of the project",
+        "type": "string",
+        "constraints": {
+          "enum": ["Active", "Completed", "On Hold", "Cancelled"]
+        },
+        "business_meaning": "Project lifecycle state"
+      }
+    }
+  },
+  "business_rules": {
+    "validation_rules": [
+      "End date must be greater than or equal to start date"
+    ]
+  }
+}
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>Available Metadata Files</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Metadata File</th>
+                                <th>Coverage</th>
+                                <th>Key Entities</th>
+                                <th>Business Purpose</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>api_master_index.metadata.json</td>
+                                <td>Master index & API service info</td>
+                                <td>All</td>
+                                <td>Central registry and cross-references</td>
+                            </tr>
+                            <tr>
+                                <td>projects_api.metadata.json</td>
+                                <td>Project management endpoints</td>
+                                <td>project, project_timeline</td>
+                                <td>Project lifecycle and portfolio management</td>
+                            </tr>
+                            <tr>
+                                <td>resources_api.metadata.json</td>
+                                <td>Resource management & capacity</td>
+                                <td>resource, capacity_allocation</td>
+                                <td>Human resource planning and optimization</td>
+                            </tr>
+                            <tr>
+                                <td>allocations_api.metadata.json</td>
+                                <td>Resource allocation management</td>
+                                <td>allocation, project_summary</td>
+                                <td>Resource assignment and tracking</td>
+                            </tr>
+                            <tr>
+                                <td>business_lines_api.metadata.json</td>
+                                <td>Organizational structure</td>
+                                <td>business_line, strategic_portfolio</td>
+                                <td>Organizational hierarchy and alignment</td>
+                            </tr>
+                            <tr>
+                                <td>managers_timeoff_api.metadata.json</td>
+                                <td>Management hierarchy & time off</td>
+                                <td>manager, timeoff, resource_role</td>
+                                <td>Management structure and availability</td>
+                            </tr>
+                            <tr>
+                                <td>allocation_actual_import_api.metadata.json</td>
+                                <td>Actual allocation tracking</td>
+                                <td>allocation_actual, import_result</td>
+                                <td>Actual vs planned variance analysis</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>Metadata-Driven Features</h3>
+                    <ul>
+                        <li><strong>Field Validation:</strong> Real-time validation against constraints and business rules</li>
+                        <li><strong>Business Context:</strong> Every field includes business meaning and purpose</li>
+                        <li><strong>Enum Suggestions:</strong> Available values automatically provided for dropdown fields</li>
+                        <li><strong>Relationship Mapping:</strong> Cross-entity relationships and foreign key references</li>
+                        <li><strong>Error Context:</strong> Detailed error messages with metadata guidance</li>
+                        <li><strong>Documentation Generation:</strong> Auto-generated tool docs from metadata</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Quick Start Section -->
+            <section id="quickstart" class="section">
+                <h2>🚀 Quick Start Guide</h2>
+
+                <div class="card">
+                    <h3>Step 1: Configure Claude Desktop</h3>
+                    <p>Add the PMO MCP Server to your Claude Desktop configuration:</p>
+                    <div class="code-block">
+{
+  "mcpServers": {
+    "pmo-server": {
+      "command": "python",
+      "args": [
+        "D:/GenAI/MCP/server/pmo/pmo_comprehensive.py"
+      ]
+    }
+  }
+}
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>Step 2: Start the PMO API Backend</h3>
+                    <div class="command">
+# Ensure your PMO API is running
+curl http://localhost:5000/projects
+# Should return project data
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>Step 3: Test with Claude Desktop</h3>
+                    <p>Open Claude Desktop and try these example queries:</p>
+                    
+                    <div class="code-block">
+💬 "Show me all active projects"
+💬 "Get resource allocation for project ID 123"
+💬 "Who are the resources in the Market & Sell portfolio?"
+💬 "What are the available strategic portfolios?"
+💬 "Show me capacity allocation for John Smith from Jan to Mar 2025"
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>Step 4: Explore Tool Categories</h3>
+                    <div class="command">
+# Use Claude Desktop to explore different tool categories:
+# 📋 Metadata: "Show me field definitions for projects"
+# 📊 Projects: "Get all projects with their timelines"
+# 👥 Resources: "Show resource capacity allocation"
+# 🏛️ Business: "What business lines do we have?"
+</div>
+                </div>
+            </section>
+
+            <!-- Examples Section -->
+            <section id="examples" class="section">
+                <h2>💬 Usage Examples</h2>
+
+                <div class="card">
+                    <h3>🚀 Quick Queries</h3>
+                    
+                    <h4>Project Management:</h4>
+                    <div class="code-block">
+💬 "Show me all active projects"
+💬 "Get details for project ID 123"  
+💬 "Find projects in the Market & Sell portfolio"
+💬 "Show technology projects only"
+💬 "What projects end this quarter?"
+</div>
+
+                    <h4>Resource Management:</h4>
+                    <div class="code-block">
+💬 "Show all resources and their roles"
+💬 "Get capacity allocation for John Smith"
+💬 "Who are the top allocated resources?"
+💬 "Show resource allocation for Q1 2025"
+💬 "Find resources in the Plan & Build portfolio"
+</div>
+
+                    <h4>Business Intelligence:</h4>
+                    <div class="code-block">
+💬 "What strategic portfolios do we have?"
+💬 "Show product lines for Auto Insights"
+💬 "Get organizational structure overview"
+💬 "Show business line relationships"
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>📊 Advanced Analysis Examples</h3>
+                    
+                    <h4>Portfolio Analysis:</h4>
+                    <div class="code-block">
+💬 "Compare resource allocation across all portfolios"
+💬 "Show project distribution by strategic portfolio"
+💬 "Analyze capacity utilization by business line"
+💬 "Get portfolio performance dashboard"
+</div>
+
+                    <h4>Resource Planning:</h4>
+                    <div class="code-block">
+💬 "Show resource capacity trends for 2025"
+💬 "Identify over-allocated resources"
+💬 "Find available capacity for new projects"
+💬 "Analyze resource allocation patterns"
+</div>
+
+                    <h4>Project Analytics:</h4>
+                    <div class="code-block">
+💬 "Show project timeline analysis"
+💬 "Get project resource allocation summary"
+💬 "Compare planned vs actual allocations"
+💬 "Analyze project completion trends"
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>🔧 Technical Examples</h3>
+                    
+                    <h4>Metadata Exploration:</h4>
+                    <div class="code-block">
+💬 "Show me field definitions for project entity"
+💬 "What API endpoints are available?"
+💬 "Get validation rules for project status"
+💬 "Show business meaning for resource fields"
+</div>
+
+                    <h4>Dynamic Filtering:</h4>
+                    <div class="code-block">
+💬 "Filter projects where status equals Active and technology_project equals Yes"
+💬 "Show resources allocated more than 50% capacity"
+💬 "Find projects ending before 2025-06-30"
+💬 "Get resources with specific skills or roles"
+</div>
+                </div>
+            </section>
+
+            <!-- API Reference Section -->
+            <section id="api-reference" class="section">
+                <h2>📚 API Reference</h2>
+
+                <div class="card">
+                    <h3>MCP Server Information</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Property</th>
+                                <th>Value</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Server Name</td>
+                                <td>PMO</td>
+                                <td>MCP server identifier</td>
+                            </tr>
+                            <tr>
+                                <td>Total Tools</td>
+                                <td>16</td>
+                                <td>Available MCP tools</td>
+                            </tr>
+                            <tr>
+                                <td>Backend API</td>
+                                <td>http://localhost:5000</td>
+                                <td>PMO REST API endpoint</td>
+                            </tr>
+                            <tr>
+                                <td>Metadata Files</td>
+                                <td>7</td>
+                                <td>JSON metadata files</td>
+                            </tr>
+                            <tr>
+                                <td>Documentation</td>
+                                <td>21 HTML pages</td>
+                                <td>Auto-generated tool docs</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>Tool Categories</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Tools</th>
+                                <th>Primary Use Cases</th>
+                                <th>Example Tools</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Metadata</td>
+                                <td>2</td>
+                                <td>API discovery, field definitions</td>
+                                <td>get_api_field_definitions, get_api_endpoints_summary</td>
+                            </tr>
+                            <tr>
+                                <td>Projects</td>
+                                <td>6</td>
+                                <td>Project management, portfolio analysis</td>
+                                <td>get_all_projects, get_project_resource_allocation</td>
+                            </tr>
+                            <tr>
+                                <td>Resources</td>
+                                <td>5</td>
+                                <td>Resource management, capacity planning</td>
+                                <td>get_all_resources, get_resource_capacity_allocation</td>
+                            </tr>
+                            <tr>
+                                <td>Business</td>
+                                <td>3</td>
+                                <td>Organizational structure, portfolio management</td>
+                                <td>get_business_lines, get_strategic_portfolios</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h3>Response Format Standards</h3>
+                    <ul>
+                        <li><strong>Success Responses:</strong> HTTP 200 with JSON data enhanced by metadata context</li>
+                        <li><strong>Error Handling:</strong> Centralized error handling with metadata guidance</li>
+                        <li><strong>Validation:</strong> Real-time validation against metadata constraints</li>
+                        <li><strong>Business Context:</strong> Every response includes business meaning and field descriptions</li>
+                        <li><strong>Relationship Data:</strong> Cross-entity relationships automatically resolved</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Troubleshooting Section -->
+            <section id="troubleshooting" class="section">
+                <h2>🛠️ Troubleshooting</h2>
+
+                <div class="card">
+                    <h3>Common Issues & Solutions</h3>
+                    
+                    <h4>1. "MCP server connection failed"</h4>
+                    <div class="alert warning">
+                        <strong>Solutions:</strong>
+                        <ul>
+                            <li>Verify Python path in Claude Desktop config</li>
+                            <li>Check that pmo_comprehensive.py exists and is executable</li>
+                            <li>Ensure all dependencies are installed: <code>pip install -r requirements.txt</code></li>
+                            <li>Restart Claude Desktop after configuration changes</li>
+                        </ul>
+                    </div>
+
+                    <h4>2. "API request failed: 500/502 errors"</h4>
+                    <div class="alert warning">
+                        <strong>Solutions:</strong>
+                        <ul>
+                            <li>Ensure PMO API backend is running on localhost:5000</li>
+                            <li>Check API health: <code>curl http://localhost:5000/projects</code></li>
+                            <li>Verify database connectivity and schema</li>
+                            <li>Check API logs for detailed error information</li>
+                        </ul>
+                    </div>
+
+                    <h4>3. "Pydantic validation error" for tools</h4>
+                    <div class="alert info">
+                        <strong>Solutions:</strong>
+                        <ul>
+                            <li>API response shape changed - tools normalize responses automatically</li>
+                            <li>Check if API returns list vs dict format (tools handle both)</li>
+                            <li>Verify metadata constraints match actual data formats</li>
+                            <li>Update metadata files if business rules changed</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Debug Mode</h3>
+                    <p>Enable detailed logging for troubleshooting:</p>
+                    <div class="command">
+# The MCP server includes detailed API call logging
+# Look for these in Claude Desktop console:
+# "API Call: GET http://localhost:5000/projects"
+# "Params: {param_dict}"
+# "API Response type: {type}"
+</div>
+                </div>
+
+                <div class="card">
+                    <h3>System Requirements</h3>
+                    <ul>
+                        <li><strong>Python:</strong> 3.8 or higher</li>
+                        <li><strong>Dependencies:</strong> FastMCP, requests, typing extensions</li>
+                        <li><strong>Backend API:</strong> PMO REST API running on localhost:5000</li>
+                        <li><strong>Metadata:</strong> JSON metadata files in server/pmo/metadata/</li>
+                        <li><strong>Claude Desktop:</strong> Latest version with MCP support</li>
+                    </ul>
+                </div>
+
+                <div class="alert success">
+                    <strong>💡 Pro Tips:</strong>
+                    <ul>
+                        <li>Start with simple queries like "Show all projects" to verify connectivity</li>
+                        <li>Use metadata tools to explore available fields and endpoints</li>
+                        <li>Check that your PMO API backend returns expected data formats</li>
+                        <li>Metadata files provide rich context - keep them updated with business changes</li>
+                        <li>The server handles both list and dict API responses automatically</li>
+                    </ul>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // Navigation functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const sections = document.querySelectorAll('.section');
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Remove active class from all links and sections
+                    navLinks.forEach(l => l.classList.remove('active'));
+                    sections.forEach(s => s.classList.remove('active'));
+                    
+                    // Add active class to clicked link
+                    this.classList.add('active');
+                    
+                    // Show corresponding section
+                    const targetId = this.getAttribute('href').substring(1);
+                    const targetSection = document.getElementById(targetId);
+                    if (targetSection) {
+                        targetSection.classList.add('active');
+                    }
+                });
+            });
+
+            // Handle submenu navigation
+            const submenuLinks = document.querySelectorAll('.nav-submenu .nav-link');
+            submenuLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Remove active from main nav
+                    navLinks.forEach(l => l.classList.remove('active'));
+                    
+                    // Show tools reference section and scroll to specific category
+                    sections.forEach(s => s.classList.remove('active'));
+                    document.getElementById('tools-reference').classList.add('active');
+                    
+                    // Scroll to specific tool category
+                    const targetId = this.getAttribute('href').substring(1);
+                    const targetElement = document.getElementById(targetId);
+                    if (targetElement) {
+                        targetElement.scrollIntoView({ behavior: 'smooth' });
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+$body = '{"product_code": "CFI", "nlq": "What are new registrations for Ford by state for 2025?"}'
+$response = Invoke-RestMethod -Method POST -Uri http://localhost:8001/askMobility -ContentType "application/json" -Body $body
+Write-Host "Session ID: $($response.session_id)"
+Write-Host ""
+$response.answer
+
+4ab610f0-6d43-435d-9c43-16d37aa71bf2
+
+$body = '{"product_code": "CFI", "session_id": "4ab610f0-6d43-435d-9c43-16d37aa71bf2", "nlq": "Now please give me the data for Florida and MA states only?"}'
+$response = Invoke-RestMethod -Method POST -Uri http://localhost:8001/askMobility -ContentType "application/json" -Body $body
+Write-Host "Session ID: $($response.session_id)"
+Write-Host ""
+$response.answer
+
+$body = '{"product_code": "CFI", "session_id": "4ab610f0-6d43-435d-9c43-16d37aa71bf2", "nlq": "Now please give me the data for NY and NJ states only?"}'
+$response = Invoke-RestMethod -Method POST -Uri http://localhost:8001/askMobility -ContentType "application/json" -Body $body
+Write-Host "Session ID: $($response.session_id)"
+Write-Host ""
+$response.answer

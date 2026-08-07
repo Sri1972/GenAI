@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D3 Chart MCP Server Documentation</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+<nav class="sidebar">
+<h1>📊 D3 Chart Server</h1>
+<div class="version">MCP Server v1.0</div>
+<div class="nav-section">
+<h3>Getting Started</h3>
+<a class="nav-link" data-section="overview">Overview</a>
+<a class="nav-link" data-section="architecture">Architecture</a>
+<a class="nav-link" data-section="quickstart">Quick Start</a>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<a class="nav-link" data-section="tools">Chart Tools</a>
+<a class="nav-link" data-section="resources">Resources</a>
+<a class="nav-link" data-section="renderer">Chart Renderer</a>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<a class="nav-link" data-section="data-formats">Data Formats</a>
+<a class="nav-link" data-section="examples">Examples</a>
+<a class="nav-link" data-section="configuration">Configuration</a>
+</div>
+</nav>
+
+<main class="content">
+
+<section id="overview" class="section">
+<h2>Overview</h2>
+<p>The <strong>D3 Chart MCP Server</strong> is a Model Context Protocol server that provides interactive D3.js and Chart.js visualization capabilities. It wraps the existing <code>d3_chart_api_server.py</code> backend and exposes 9 chart generation tools through a proper MCP interface.</p>
+
+<div class="card">
+<h4>✨ Key Features</h4>
+<ul>
+<li><strong>9 Chart Types:</strong> Line, Bar, Grouped Bar, Pie/Donut, Scatter, Bubble, Heatmap</li>
+<li><strong>Multiple Data Formats:</strong> Chart.js, PMO allocation, simple arrays, object arrays</li>
+<li><strong>Auto-Detection:</strong> Intelligent chart type selection based on data structure</li>
+<li><strong>Interactive:</strong> Hover tooltips, legends, responsive sizing</li>
+<li><strong>Dual Rendering:</strong> Chart.js for most charts, D3.js for pie/donut specializations</li>
+<li><strong>Standalone Output:</strong> Self-contained HTML files with embedded data</li>
+</ul>
+</div>
+
+<div class="info">
+<strong>📍 Location:</strong> <code>D:\GenAI\MCP\server\charts\mcp-d3-stdio-custom\</code><br>
+<strong>🎯 Main Server:</strong> <code>d3_chart_mcp.py</code><br>
+<strong>🔧 Backend API:</strong> <code>d3_chart_api_server.py</code><br>
+<strong>🎨 Renderer:</strong> <code>chart_renderer.py</code>
+</div>
+
+<h3>Why This Server?</h3>
+<p>The D3 Chart MCP Server solves the challenge of generating professional, interactive visualizations from structured data within the MCP ecosystem. It provides:</p>
+<ul>
+<li>Consistent chart rendering across PMO, analytics, and data exploration workflows</li>
+<li>Automatic data format detection and normalization</li>
+<li>Beautiful, publication-ready charts with minimal configuration</li>
+<li>Integration with the PMO MCP Client for seamless data-to-visualization pipelines</li>
+</ul>
+</section>
+
+<section id="architecture" class="section">
+<h2>Architecture</h2>
+<p>The server uses a <strong>three-layer architecture</strong> to separate concerns:</p>
+
+<div class="arch-diagram">
+<div class="arch-layer">
+<h4>🔷 Layer 1: MCP Interface <span class="layer-badge">d3_chart_mcp.py</span></h4>
+<p>FastMCP-based server exposing 9 chart generation tools and 2 documentation resources. Handles MCP protocol communication and tool registration.</p>
+</div>
+
+<div class="arch-arrow">↓</div>
+
+<div class="arch-layer">
+<h4>🔷 Layer 2: API Backend <span class="layer-badge">d3_chart_api_server.py</span></h4>
+<p>STDIO JSON-RPC server that processes chart requests. Spawned as subprocess, receives JSON payloads, returns chart status and file paths.</p>
+</div>
+
+<div class="arch-arrow">↓</div>
+
+<div class="arch-layer">
+<h4>🔷 Layer 3: Renderer <span class="layer-badge">chart_renderer.py</span></h4>
+<p>Core rendering engine with intelligent data normalization. Detects data patterns, selects appropriate chart types, generates HTML with embedded JavaScript.</p>
+</div>
+</div>
+
+<h3>Communication Flow</h3>
+<div class="flow-diagram">
+<div class="flow-step">
+<div class="step-num">1</div>
+<div class="step-content">
+<div class="step-title">MCP Client Request</div>
+<div class="step-desc">PMO Client calls <code>create_line_chart()</code> tool via MCP protocol</div>
+</div>
+</div>
+
+<div class="flow-step">
+<div class="step-num">2</div>
+<div class="step-content">
+<div class="step-title">MCP Server (FastMCP)</div>
+<div class="step-desc"><code>d3_chart_mcp.py</code> receives tool call and invokes <code>call_d3_api()</code></div>
+</div>
+</div>
+
+<div class="flow-step">
+<div class="step-num">3</div>
+<div class="step-content">
+<div class="step-title">Subprocess Spawn</div>
+<div class="step-desc">Launches <code>d3_chart_api_server.py</code> as STDIO subprocess with JSON payload</div>
+</div>
+</div>
+
+<div class="flow-step">
+<div class="step-num">4</div>
+<div class="step-content">
+<div class="step-title">API Processing</div>
+<div class="step-desc">API server parses request and delegates to <code>chart_renderer.py</code></div>
+</div>
+</div>
+
+<div class="flow-step">
+<div class="step-num">5</div>
+<div class="step-content">
+<div class="step-title">Data Normalization</div>
+<div class="step-desc">Renderer analyzes data structure, detects patterns, selects chart type</div>
+</div>
+</div>
+
+<div class="flow-step">
+<div class="step-num">6</div>
+<div class="step-content">
+<div class="step-title">HTML Generation</div>
+<div class="step-desc">Generates standalone HTML with embedded JSON and Chart.js/D3.js code</div>
+</div>
+</div>
+
+<div class="flow-step">
+<div class="step-num">7</div>
+<div class="step-content">
+<div class="step-title">File Output</div>
+<div class="step-desc">Writes to <code>html-charts/chart_TIMESTAMP.html</code></div>
+</div>
+</div>
+
+<div class="flow-step">
+<div class="step-num">8</div>
+<div class="step-content">
+<div class="step-title">Response Path</div>
+<div class="step-desc">Returns success status and file path up through API → MCP Server → Client</div>
+</div>
+</div>
+</div>
+
+<div class="note">
+<strong>💡 Design Pattern:</strong> The wrapper pattern allows the existing STDIO API server to remain unchanged while providing a true MCP interface for broader compatibility.
+</div>
+</section>
+
+<section id="quickstart" class="section">
+<h2>Quick Start</h2>
+
+<h3>1. Installation</h3>
+<pre><code># Install FastMCP
+pip install mcp
+
+# Navigate to server directory
+cd D:\GenAI\MCP\server\charts\mcp-d3-stdio-custom</code></pre>
+
+<h3>2. Verify Files</h3>
+<pre><code># Required files
+d3_chart_mcp.py          # MCP server
+d3_chart_api_server.py   # Backend API
+chart_renderer.py        # Renderer
+html-charts/             # Output directory</code></pre>
+
+<h3>3. Run Server</h3>
+<pre><code>python d3_chart_mcp.py</code></pre>
+
+<div class="info">
+<strong>🔌 Connection:</strong> The server runs in STDIO mode for MCP client connections. Use with Claude Desktop or the PMO MCP Client.
+</div>
+
+<h3>4. Test with PMO Client</h3>
+<pre><code># From PMO client, create a simple chart
+data = {
+    "labels": ["Jan", "Feb", "Mar"],
+    "datasets": [{
+        "label": "Sales",
+        "data": [100, 150, 200]
+    }]
+}
+
+# Call via MCP
+response = forward_chart_json_to_d3_mcp(data, "Sales Report")</code></pre>
+</section>
+
+<section id="tools" class="section">
+<h2>Chart Tools</h2>
+<p>The server provides <strong>9 chart generation tools</strong>, each accepting flexible data formats.</p>
+
+<div class="tool-item">
+<h4>create_line_chart <span class="badge tool">TOOL</span></h4>
+<p>Create interactive D3.js line chart with smooth curves and hover interactions.</p>
+<div class="param">
+<span class="param-name">title</span> <span class="param-type">string</span> <span class="badge optional">optional</span><br>
+Chart title (default: "Line Chart")
+</div>
+<div class="param">
+<span class="param-name">data</span> <span class="param-type">Dict | List</span> <span class="badge optional">optional</span><br>
+Chart data in Chart.js format or raw data
+</div>
+<div class="param">
+<span class="param-name">labels</span> <span class="param-type">List[str]</span> <span class="badge optional">optional</span><br>
+X-axis labels (if data not in Chart.js format)
+</div>
+<div class="param">
+<span class="param-name">datasets</span> <span class="param-type">List[Dict]</span> <span class="badge optional">optional</span><br>
+Data series (if data not in Chart.js format)
+</div>
+<p><strong>Returns:</strong> Path to generated HTML file</p>
+</div>
+
+<div class="tool-item">
+<h4>create_bar_chart <span class="badge tool">TOOL</span></h4>
+<p>Create vertical bar chart with single or multiple series.</p>
+<div class="param">
+<span class="param-name">stacked</span> <span class="param-type">bool</span> <span class="badge optional">optional</span><br>
+Create stacked bar chart (default: false)
+</div>
+<p>Other parameters same as <code>create_line_chart</code></p>
+</div>
+
+<div class="tool-item">
+<h4>create_grouped_bar_chart <span class="badge tool">TOOL</span></h4>
+<p>Create side-by-side grouped bars with legend and tooltips. Enhanced for PMO project allocation.</p>
+<p>Parameters same as <code>create_line_chart</code></p>
+</div>
+
+<div class="tool-item">
+<h4>create_pie_chart <span class="badge tool">TOOL</span></h4>
+<p>Create pie or donut chart with segment colors and value labels.</p>
+<div class="param">
+<span class="param-name">donut</span> <span class="param-type">bool</span> <span class="badge optional">optional</span><br>
+Create donut chart with inner radius (default: false)
+</div>
+<div class="param">
+<span class="param-name">values</span> <span class="param-type">List[float]</span> <span class="badge optional">optional</span><br>
+Values for each category
+</div>
+</div>
+
+<div class="tool-item">
+<h4>create_scatter_plot <span class="badge tool">TOOL</span></h4>
+<p>Create scatter plot for correlation analysis.</p>
+<div class="param">
+<span class="param-name">points</span> <span class="param-type">List[Dict]</span> <span class="badge optional">optional</span><br>
+Points with x, y, r (radius), color, label properties
+</div>
+</div>
+
+<div class="tool-item">
+<h4>create_bubble_chart <span class="badge tool">TOOL</span></h4>
+<p>Create bubble chart with three-dimensional data (x, y, radius).</p>
+<div class="param">
+<span class="param-name">datasets</span> <span class="param-type">List[Dict]</span> <span class="badge optional">optional</span><br>
+Datasets containing bubble data points [{x, y, r}]
+</div>
+</div>
+
+<div class="tool-item">
+<h4>create_heatmap <span class="badge tool">TOOL</span></h4>
+<p>Create 2D intensity grid with color mapping.</p>
+<div class="param">
+<span class="param-name">x_labels</span> <span class="param-type">List[str]</span> <span class="badge optional">optional</span><br>
+X-axis category labels
+</div>
+<div class="param">
+<span class="param-name">y_labels</span> <span class="param-type">List[str]</span> <span class="badge optional">optional</span><br>
+Y-axis category labels
+</div>
+<div class="param">
+<span class="param-name">values</span> <span class="param-type">List[List[float]]</span> <span class="badge optional">optional</span><br>
+2D matrix where values[y][x] is intensity
+</div>
+</div>
+
+<div class="tool-item">
+<h4>render_chart_from_dataset <span class="badge tool">TOOL</span></h4>
+<p>Universal renderer with intelligent chart type routing.</p>
+<div class="param">
+<span class="param-name">chart_type</span> <span class="param-type">string</span> <span class="badge optional">optional</span><br>
+Hint: line, bar, pie, grouped_bar, scatter, etc. (default: "line")
+</div>
+<p>Auto-detects optimal chart type if not specified.</p>
+</div>
+</section>
+
+<section id="resources" class="section">
+<h2>Resources</h2>
+<p>The server exposes <strong>2 documentation resources</strong> via MCP resources protocol.</p>
+
+<div class="card">
+<h4>d3-charts://docs/overview <span class="badge resource">RESOURCE</span></h4>
+<p><strong>Content:</strong> Overview of available chart types, features, and capabilities</p>
+<p><strong>Format:</strong> Markdown</p>
+<p><strong>Includes:</strong></p>
+<ul>
+<li>Chart type catalog (Basic Statistical, Distribution & Correlation, Specialized)</li>
+<li>Feature list (Interactive, Responsive, Accessible, Export-ready)</li>
+<li>Data format examples</li>
+</ul>
+</div>
+
+<div class="card">
+<h4>d3-charts://docs/data-formats <span class="badge resource">RESOURCE</span></h4>
+<p><strong>Content:</strong> Comprehensive guide to supported data formats</p>
+<p><strong>Format:</strong> Markdown</p>
+<p><strong>Covers:</strong></p>
+<ul>
+<li>Chart.js format (recommended)</li>
+<li>PMO project allocation format</li>
+<li>Scatter plot format</li>
+<li>Heatmap format</li>
+<li>Simple arrays</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>💡 Usage:</strong> Resources are accessible via MCP client resource listing and can be queried for documentation without generating charts.
+</div>
+</section>
+
+<section id="renderer" class="section">
+<h2>Chart Renderer</h2>
+<p>The <code>chart_renderer.py</code> module contains the core rendering logic with intelligent data normalization.</p>
+
+<h3>Key Function: render_chart_html_from_dataset()</h3>
+<pre><code>def render_chart_html_from_dataset(
+    data_obj, 
+    title_text: str = "Chart", 
+    chart_type: str | None = None
+) -> str</code></pre>
+
+<h3>Data Normalization Pipeline</h3>
+<ol>
+<li><strong>Input Detection:</strong> Identifies data structure (dict with 'result', list of records, Chart.js format)</li>
+<li><strong>Field Analysis:</strong> Detects label fields (month, date, time), name fields (project_name), numeric fields</li>
+<li><strong>Chart Type Selection:</strong> Applies heuristics based on data shape and field names</li>
+<li><strong>Format Conversion:</strong> Transforms to Chart.js labels/datasets structure</li>
+<li><strong>Template Selection:</strong> Chooses Chart.js or D3.js template based on chart type</li>
+<li><strong>HTML Generation:</strong> Embeds data as JSON in script tag, initializes visualization</li>
+</ol>
+
+<h3>Auto-Detection Heuristics</h3>
+<table>
+<tr><th>Pattern</th><th>Detected Type</th><th>Logic</th></tr>
+<tr><td>Single numeric field + categorical labels</td><td>Pie Chart</td><td>Natural part-to-whole representation</td></tr>
+<tr><td>Project name + planned/actual fields</td><td>Grouped Bar</td><td>Budget vs actual comparison</td></tr>
+<tr><td>Time-like labels + multiple numerics</td><td>Line Chart</td><td>Time series trends</td></tr>
+<tr><td>X/Y/R coordinate points</td><td>Scatter/Bubble</td><td>Correlation or 3D data</td></tr>
+</table>
+
+<h3>Template Engines</h3>
+<div class="card">
+<h4>Chart.js Template (Default)</h4>
+<p>Used for: Line, Bar, Grouped Bar, Scatter, Bubble, Heatmap</p>
+<ul>
+<li>UMD bundle from CDN</li>
+<li>Responsive canvas rendering</li>
+<li>Custom legend with totals</li>
+<li>Data embedded in <code>&lt;script id="chart-data"&gt;</code></li>
+</ul>
+</div>
+
+<div class="card">
+<h4>D3.js Template (Pie/Donut)</h4>
+<p>Used for: Pie and Donut charts</p>
+<ul>
+<li>D3.js v7 from CDN</li>
+<li>SVG-based rendering</li>
+<li>Custom tooltips and animations</li>
+<li>Arc generators with configurable inner radius</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>⚠️ Important:</strong> The renderer automatically strips cumulative/running total fields to avoid double-counting in stacked visualizations.
+</div>
+</section>
+
+<section id="data-formats" class="section">
+<h2>Data Formats</h2>
+
+<h3>1. Chart.js Format (Recommended)</h3>
+<pre><code>{
+  "labels": ["Q1", "Q2", "Q3", "Q4"],
+  "datasets": [{
+    "label": "Revenue",
+    "data": [120000, 150000, 180000, 200000],
+    "backgroundColor": "#1f77b4"
+  }]
+}</code></pre>
+
+<h3>2. PMO Project Allocation</h3>
+<pre><code>[{
+  "month": "2025-01",
+  "resource_id": 1,
+  "project_allocation_details": [
+    {"project_name": "Alpha", "planned_percentage": 60},
+    {"project_name": "Beta", "planned_percentage": 40}
+  ]
+}]</code></pre>
+
+<h3>3. Scatter Plot Format</h3>
+<pre><code>{
+  "points": [
+    {"x": 10, "y": 20, "r": 5, "label": "Point A"},
+    {"x": 15, "y": 25, "r": 8, "label": "Point B"}
+  ]
+}</code></pre>
+
+<h3>4. Heatmap Format</h3>
+<pre><code>{
+  "xLabels": ["Mon", "Tue", "Wed"],
+  "yLabels": ["Week 1", "Week 2"],
+  "values": [[10, 15, 12], [8, 12, 16]]
+}</code></pre>
+
+<h3>5. Simple Arrays</h3>
+<pre><code>[100, 150, 200, 175, 225]</code></pre>
+<p>Auto-converted to Chart.js format with numeric labels.</p>
+
+<h3>6. Object Arrays</h3>
+<pre><code>[
+  {"month": "Jan", "sales": 100, "expenses": 80},
+  {"month": "Feb", "sales": 150, "expenses": 95}
+]</code></pre>
+<p>Renderer extracts label field and numeric fields automatically.</p>
+</section>
+
+<section id="examples" class="section">
+<h2>Examples</h2>
+
+<h3>Example 1: Simple Line Chart</h3>
+<pre><code># Via MCP tool call
+create_line_chart(
+    title="Monthly Sales",
+    labels=["Jan", "Feb", "Mar"],
+    datasets=[{
+        "label": "Sales",
+        "data": [100, 150, 200]
+    }]
+)</code></pre>
+
+<h3>Example 2: Grouped Bar (PMO Projects)</h3>
+<pre><code>create_grouped_bar_chart(
+    title="Project Hours - January 2025",
+    data={
+        "labels": ["Project Alpha", "Project Beta"],
+        "datasets": [
+            {"label": "Planned", "data": [120, 80]},
+            {"label": "Actual", "data": [110, 95]}
+        ]
+    }
+)</code></pre>
+
+<h3>Example 3: Pie Chart from Simple Data</h3>
+<pre><code>create_pie_chart(
+    title="Market Share",
+    labels=["Product A", "Product B", "Product C"],
+    values=[45, 30, 25]
+)</code></pre>
+
+<h3>Example 4: Auto-Detection</h3>
+<pre><code># Renderer auto-detects pie chart
+data = [
+    {"category": "Engineering", "headcount": 50},
+    {"category": "Sales", "headcount": 30},
+    {"category": "Marketing", "headcount": 20}
+]
+
+render_chart_from_dataset(
+    title="Department Headcount",
+    data=data
+    # chart_type automatically detected as 'pie'
+)</code></pre>
+
+<h3>Example 5: Scatter Plot</h3>
+<pre><code>create_scatter_plot(
+    title="Task Complexity vs Duration",
+    points=[
+        {"x": 5, "y": 120, "label": "Task A"},
+        {"x": 8, "y": 200, "label": "Task B"},
+        {"x": 3, "y": 80, "label": "Task C"}
+    ]
+)</code></pre>
+</section>
+
+<section id="configuration" class="section">
+<h2>Configuration</h2>
+
+<h3>Dependencies</h3>
+<table>
+<tr><th>Component</th><th>Requirement</th><th>Purpose</th></tr>
+<tr><td>FastMCP</td><td>Python package</td><td>MCP server framework</td></tr>
+<tr><td>Chart.js</td><td>CDN (v4.4.0)</td><td>Canvas-based charts</td></tr>
+<tr><td>D3.js</td><td>CDN (v7)</td><td>SVG-based pie/donut</td></tr>
+<tr><td>Python 3.8+</td><td>Runtime</td><td>Server execution</td></tr>
+</table>
+
+<h3>File Structure</h3>
+<pre><code>mcp-d3-stdio-custom/
+├── d3_chart_mcp.py          # Main MCP server
+├── d3_chart_api_server.py   # Backend API (STDIO)
+├── chart_renderer.py        # HTML generator
+├── test_d3_charts_creation.py
+├── README.md
+├── html-charts/             # Output directory
+├── prompts/
+│   └── chart_prompts.txt
+├── resources/
+│   └── chart_resources.txt
+└── docs/
+    ├── index.html
+    ├── styles.css
+    └── script.js</code></pre>
+
+<h3>Environment Variables</h3>
+<p>None required. Server auto-detects file paths relative to <code>d3_chart_mcp.py</code>.</p>
+
+<h3>Output Configuration</h3>
+<div class="param">
+<span class="param-name">CHARTS_DIR</span><br>
+Resolved to directory containing d3_chart_mcp.py
+</div>
+<div class="param">
+<span class="param-name">D3_API_SERVER</span><br>
+Path to d3_chart_api_server.py (same directory)
+</div>
+<div class="param">
+<span class="param-name">html-charts/</span><br>
+Default output directory for generated charts
+</div>
+
+<h3>Timeouts</h3>
+<pre><code># Default API call timeout
+call_d3_api(tool_name, arguments, timeout=30)</code></pre>
+
+<div class="note">
+<strong>💡 Tip:</strong> Charts are standalone HTML files and can be moved, emailed, or hosted without dependencies.
+</div>
+</section>
+
+</main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
