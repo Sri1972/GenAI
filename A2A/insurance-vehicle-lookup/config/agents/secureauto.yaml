@@ -1,0 +1,28 @@
+agent_id: secureauto-agent-001
+organization: SecureAuto Insurance Co.
+name: SecureAuto Underwriting Agent
+description: Processes auto insurance quotes, claims, and renewals using external vehicle data.
+port: 8003
+
+capabilities:
+  - new_policy_quotes
+  - claims_processing
+  - policy_renewals
+  - risk_assessment
+  - premium_calculation
+
+partner_agents:
+  autoregistry:
+    endpoint: http://localhost:8004
+    agent_id: autoregistry-agent-001
+    timeout_seconds: 60
+
+conversation:
+  max_rounds: 4
+  require_followups: true
+  min_followups_before_decision: 1
+
+model:
+  name: null  # Uses LITELLM_SONNET_45_MODEL from .env
+  temperature: 0.7
+  max_tokens: 2048

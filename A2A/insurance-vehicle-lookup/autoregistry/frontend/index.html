@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoRegistry — Data Services Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7', 400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+        @keyframes slide-in { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+        .slide-in { animation: slide-in 0.4s ease-out; }
+        @keyframes flash { 0% { background-color: rgb(209 250 229); } 100% { background-color: transparent; } }
+        .flash-row { animation: flash 2s ease-out; }
+        .md-content p { margin-bottom: 0.5rem; }
+        .md-content ul, .md-content ol { margin-left: 1rem; margin-bottom: 0.5rem; }
+        .md-content li { list-style-type: disc; margin-bottom: 0.2rem; }
+        .md-content strong { color: #d1d5db; }
+        .md-content code { background: rgba(55,65,81,0.5); padding: 0.1rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem; }
+        .md-content h1, .md-content h2, .md-content h3 { font-weight: 600; margin-bottom: 0.3rem; color: #e5e7eb; }
+        .lookup-badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.65rem; font-family: monospace; font-weight: 600; }
+    </style>
+</head>
+<body class="bg-gray-900 min-h-screen text-gray-100">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const API_BASE = 'http://localhost:8004';
+
+        function App() {
+            const [records, setRecords] = useState([]);
+            const [activity, setActivity] = useState([]);
+            const [selectedRecord, setSelectedRecord] = useState(null);
+            const [error, setError] = useState(null);
+            const [autoRefresh, setAutoRefresh] = useState(true);
+
+            const loadData = () => {
+                fetch(`${API_BASE}/api/records`)
+                    .then(r => r.json())
+                    .then(setRecords)
+                    .catch(() => setError('Cannot connect to AutoRegistry agent (port 8004). Is it running?'));
+
+                fetch(`${API_BASE}/api/activity`)
+                    .then(r => r.json())
+                    .then(setActivity)
+                    .catch(() => {});
+            };
+
+            useEffect(() => {
+                loadData();
+                if (autoRefresh) {
+                    const interval = setInterval(loadData, 3000);
+                    return () => clearInterval(interval);
+                }
+            }, [autoRefresh]);
+
+            return (
+                <div className="min-h-screen">
+                    {/* Header */}
+                    <header className="bg-gradient-to-r from-brand-900 to-brand-700 text-white shadow-lg border-b border-brand-600">
+                        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center border border-brand-400/30">
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z"/></svg>
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-bold">AutoRegistry</h1>
+                                    <p className="text-brand-300 text-xs">Data Services LLC — Vehicle & Owner Intelligence</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={() => setAutoRefresh(!autoRefresh)}
+                                    className={`text-xs px-3 py-1.5 rounded-full border ${autoRefresh ? 'border-brand-400 text-brand-300 bg-brand-900/50' : 'border-gray-600 text-gray-400'}`}
+                                >
+                                    {autoRefresh ? '● Live' : '○ Paused'}
+                                </button>
+                                <div className="flex items-center gap-2 text-sm">
+                                    <span className="pulse-dot w-2 h-2 bg-brand-400 rounded-full inline-block"></span>
+                                    <span className="text-brand-300">Agent Online — Port 8004</span>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="max-w-7xl mx-auto px-6 py-6 grid grid-cols-12 gap-6">
+                        {/* Stats Bar */}
+                        <div className="col-span-12 grid grid-cols-4 gap-4">
+                            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                                <p className="text-gray-400 text-xs uppercase tracking-wide">Total Records</p>
+                                <p className="text-2xl font-bold text-white mt-1">{records.length}</p>
+                            </div>
+                            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                                <p className="text-gray-400 text-xs uppercase tracking-wide">Requests Today</p>
+                                <p className="text-2xl font-bold text-brand-400 mt-1">{activity.length}</p>
+                            </div>
+                            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                                <p className="text-gray-400 text-xs uppercase tracking-wide">Connected Partners</p>
+                                <p className="text-2xl font-bold text-blue-400 mt-1">1</p>
+                                <p className="text-[10px] text-gray-500 mt-0.5">SecureAuto Insurance</p>
+                            </div>
+                            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                                <p className="text-gray-400 text-xs uppercase tracking-wide">Avg Confidence</p>
+                                <p className="text-2xl font-bold text-amber-400 mt-1">94%</p>
+                            </div>
+                        </div>
+
+                        {/* Records Table */}
+                        <div className="col-span-7">
+                            <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+                                <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+                                    <h2 className="font-semibold text-sm">Vehicle Database</h2>
+                                    <span className="text-xs text-gray-500">{records.length} records</span>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-900/50 text-gray-400 text-xs uppercase">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left">Owner</th>
+                                                <th className="px-4 py-2 text-left">Vehicle</th>
+                                                <th className="px-4 py-2 text-left">Plate</th>
+                                                <th className="px-4 py-2 text-left">Title</th>
+                                                <th className="px-4 py-2 text-right">Miles</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-700/50">
+                                            {records.map((r, i) => (
+                                                <tr
+                                                    key={r.vin}
+                                                    onClick={() => setSelectedRecord(r)}
+                                                    className={`hover:bg-gray-700/50 cursor-pointer transition-colors ${selectedRecord?.vin === r.vin ? 'bg-brand-900/30' : ''}`}
+                                                >
+                                                    <td className="px-4 py-2.5 font-medium text-gray-200">{r.owner_name}</td>
+                                                    <td className="px-4 py-2.5 text-gray-400">{r.vehicle}</td>
+                                                    <td className="px-4 py-2.5">
+                                                        <span className="px-2 py-0.5 bg-gray-700 rounded text-xs font-mono text-brand-300">{r.plate}</span>
+                                                    </td>
+                                                    <td className="px-4 py-2.5">
+                                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                                            r.title_status === 'clean' ? 'bg-green-900/40 text-green-400' :
+                                                            'bg-red-900/40 text-red-400'
+                                                        }`}>{r.title_status}</span>
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right text-gray-400 font-mono text-xs">{r.mileage.toLocaleString()}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* Selected Record Detail */}
+                            {selectedRecord && (
+                                <div className="mt-4 bg-gray-800 rounded-xl border border-gray-700 p-4 slide-in">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="font-semibold text-brand-400">{selectedRecord.vehicle}</h3>
+                                        <button onClick={() => setSelectedRecord(null)} className="text-gray-500 hover:text-gray-300 text-xs">Close</button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 text-xs">
+                                        <div><span className="text-gray-500">VIN:</span> <span className="font-mono text-gray-300">{selectedRecord.vin}</span></div>
+                                        <div><span className="text-gray-500">Plate:</span> <span className="font-mono text-brand-300">{selectedRecord.plate}</span></div>
+                                        <div><span className="text-gray-500">Owner:</span> <span className="text-gray-300">{selectedRecord.owner_name}</span></div>
+                                        <div><span className="text-gray-500">Mileage:</span> <span className="text-gray-300">{selectedRecord.mileage.toLocaleString()} mi</span></div>
+                                        <div><span className="text-gray-500">Title:</span> <span className={selectedRecord.title_status === 'clean' ? 'text-green-400' : 'text-red-400'}>{selectedRecord.title_status}</span></div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Activity Feed */}
+                        <div className="col-span-5">
+                            <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+                                <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
+                                    <h2 className="font-semibold text-sm">Incoming Requests</h2>
+                                    <span className="text-xs text-gray-500">Live feed</span>
+                                </div>
+                                <div className="overflow-y-auto flex-1 px-4 py-3 space-y-3">
+                                    {activity.length === 0 && (
+                                        <div className="text-center text-gray-500 text-sm py-12">
+                                            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-700 flex items-center justify-center">
+                                                <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                                            </div>
+                                            <p>Waiting for partner requests...</p>
+                                            <p className="text-xs text-gray-600 mt-1">Run a case from the SecureAuto UI</p>
+                                        </div>
+                                    )}
+                                    {(() => {
+                                        // Extract clean body from a response (may be JSON wrapped or markdown)
+                                        const cleanBody = (text) => {
+                                            if (!text) return '';
+                                            let content = text.trim();
+                                            // Strip ```json ... ``` code fences
+                                            if (content.startsWith('```')) {
+                                                content = content.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+                                            }
+                                            content = content.trim();
+                                            if (content.startsWith('{')) {
+                                                try {
+                                                    const parsed = JSON.parse(content);
+                                                    if (parsed.body) return parsed.body;
+                                                } catch (e) {
+                                                    // Truncated JSON — extract body with regex
+                                                    const bodyMatch = content.match(/"body"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/s);
+                                                    if (bodyMatch) {
+                                                        return bodyMatch[1]
+                                                            .replace(/\\n/g, '\n')
+                                                            .replace(/\\t/g, '\t')
+                                                            .replace(/\\"/g, '"')
+                                                            .replace(/\\\\/g, '\\');
+                                                    }
+                                                }
+                                            }
+                                            return content;
+                                        };
+
+                                        // Group activity into request/response pairs (data is chronological)
+                                        const pairs = [];
+                                        for (let i = 0; i < activity.length; i++) {
+                                            const item = activity[i];
+                                            if (item.type === 'data_request' || item.type === 'info_request') {
+                                                const next = activity[i + 1];
+                                                const response = (next && (next.type === 'data_response' || next.type === 'info_response'))
+                                                    ? next : null;
+                                                pairs.push({ request: item, response });
+                                                if (response) i++;
+                                            } else if (item.type === 'data_response' || item.type === 'info_response') {
+                                                pairs.push({ request: null, response: item });
+                                            }
+                                        }
+                                        // Show newest first
+                                        const displayPairs = [...pairs].reverse();
+                                        return displayPairs.map((pair, idx) => (
+                                            <div key={idx} className="slide-in rounded-lg border border-gray-700/50 overflow-hidden mb-3">
+                                                {/* Request section */}
+                                                {pair.request && (
+                                                    <div className="bg-blue-950/30 p-3 border-b border-gray-700/50">
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-400">
+                                                                    Request
+                                                                </span>
+                                                                <span className="text-[10px] text-gray-500">from SecureAuto</span>
+                                                            </div>
+                                                            <span className="text-[10px] text-gray-600">{new Date(pair.request.timestamp).toLocaleTimeString()}</span>
+                                                        </div>
+                                                        <p className="text-xs text-gray-300 font-medium">{pair.request.subject}</p>
+                                                        {pair.request.lookup_criteria && Object.keys(pair.request.lookup_criteria).length > 0 && (
+                                                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                                                {Object.entries(pair.request.lookup_criteria).map(([key, val]) => (
+                                                                    <span key={key} className="lookup-badge bg-blue-900/60 text-blue-300 border border-blue-700/50">
+                                                                        {key === 'vin' ? 'VIN' : key === 'license_plate' ? 'PLATE' : key.toUpperCase()}: {val}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        {(!pair.request.lookup_criteria || Object.keys(pair.request.lookup_criteria).length === 0) && (
+                                                            <p className="text-xs text-gray-500 mt-1 line-clamp-2">{pair.request.body}</p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {/* Response section */}
+                                                {pair.response && (
+                                                    <div className="bg-gray-800/50 p-3">
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-brand-900/50 text-brand-400">
+                                                                    Response
+                                                                </span>
+                                                                <span className="text-[10px] text-gray-500">from AutoRegistry</span>
+                                                            </div>
+                                                            <span className="text-[10px] text-gray-600">{new Date(pair.response.timestamp).toLocaleTimeString()}</span>
+                                                        </div>
+                                                        <div
+                                                            className="text-xs text-gray-300 mt-1 md-content"
+                                                            dangerouslySetInnerHTML={{
+                                                                __html: DOMPurify.sanitize(marked.parse(cleanBody(pair.response.body)))
+                                                            }}
+                                                        />
+                                                    </div>
+                                                )}
+                                                {pair.request && !pair.response && (
+                                                    <div className="bg-gray-800/50 p-2 text-center">
+                                                        <span className="text-[10px] text-gray-500 italic">Processing...</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {error && (
+                        <div className="fixed bottom-4 right-4 p-4 bg-red-900/90 border border-red-700 rounded-lg text-red-200 text-sm max-w-sm">
+                            {error}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

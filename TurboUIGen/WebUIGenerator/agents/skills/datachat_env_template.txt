@@ -1,0 +1,12 @@
+# DataChat API Server Configuration
+# Copy this to .env in your project root and fill in values
+
+# LiteLLM Proxy (OpenAI-compatible endpoint)
+LITELLM_API_BASE={{LITELLM_API_BASE}}
+LITELLM_API_KEY={{LITELLM_API_KEY}}
+LITELLM_SSL_CERT={{LITELLM_SSL_CERT}}
+LITELLM_TIMEOUT=120
+LITELLM_MODEL={{LITELLM_MODEL}}
+
+# API Server Port
+API_PORT=8080

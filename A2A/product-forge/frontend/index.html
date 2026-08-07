@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Forge — Multi-Agent Product Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        forge: { 50: '#fdf4ff', 100: '#fae8ff', 200: '#f5d0fe', 300: '#f0abfc', 400: '#e879f9', 500: '#d946ef', 600: '#c026d3', 700: '#a21caf', 800: '#86198f', 900: '#701a75' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+        @keyframes slide-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .slide-in { animation: slide-in 0.25s ease-out; }
+        .markdown-body { font-size: 0.8rem; line-height: 1.6; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 { font-weight: 700; margin-top: 0.5rem; margin-bottom: 0.25rem; }
+        .markdown-body h1 { font-size: 0.95rem; }
+        .markdown-body h2 { font-size: 0.875rem; }
+        .markdown-body h3 { font-size: 0.8125rem; }
+        .markdown-body p { margin: 0.25rem 0; }
+        .markdown-body strong { font-weight: 600; }
+        .markdown-body ul, .markdown-body ol { padding-left: 1.25rem; margin: 0.25rem 0; }
+        .markdown-body li { margin: 0.1rem 0; }
+        .markdown-body hr { border: none; border-top: 1px solid #e5e7eb; margin: 0.5rem 0; }
+        .markdown-body code { background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.7rem; }
+        .markdown-body pre { background: #1f2937; color: #e5e7eb; padding: 0.5rem; border-radius: 0.375rem; overflow-x: auto; margin: 0.4rem 0; font-size: 0.7rem; }
+        .markdown-body pre code { background: none; color: inherit; }
+        .markdown-body blockquote { border-left: 3px solid #d946ef; padding-left: 0.75rem; margin: 0.4rem 0; color: #6b7280; }
+        * { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+        .tab-active { border-bottom: 2px solid #c026d3; color: #86198f; font-weight: 600; }
+        .tab-inactive { border-bottom: 2px solid transparent; color: #6b7280; }
+        .tab-inactive:hover { color: #374151; border-bottom-color: #e5e7eb; }
+        .editor-textarea { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 0.75rem; line-height: 1.5; }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen overflow-hidden">
+    <div id="root" class="h-full"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+        const API_BASE = 'http://localhost:8010';
+
+        function renderMd(text) {
+            if (!text) return '';
+            return DOMPurify.sanitize(marked.parse(text));
+        }
+
+        function formatCost(cost) {
+            if (!cost || cost === 0) return '$0.00';
+            if (cost < 0.01) return '<$0.01';
+            return '$' + cost.toFixed(2);
+        }
+
+        function formatTokens(n) {
+            if (!n) return '0';
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        function App() {
+            const [projects, setProjects] = useState([]);
+            const [config, setConfig] = useState(null);
+            const [showNewProject, setShowNewProject] = useState(false);
+            const [newName, setNewName] = useState('');
+            const [newIdea, setNewIdea] = useState('');
+            const [draftMode, setDraftMode] = useState(true);
+            const [error, setError] = useState(null);
+
+            const [activeProjectId, setActiveProjectId] = useState(null);
+            const [sessionId, setSessionId] = useState(null);
+            const [state, setState] = useState(null);
+            const [messages, setMessages] = useState([]);
+            const [artifacts, setArtifacts] = useState({});
+            const [streaming, setStreaming] = useState(false);
+
+            // Tabbed view state
+            const [activeTab, setActiveTab] = useState('overview');
+            // Artifact editor
+            const [editingArtifact, setEditingArtifact] = useState(null);
+            const [editContent, setEditContent] = useState('');
+            // Upload modal
+            const [showUpload, setShowUpload] = useState(false);
+            const [uploadName, setUploadName] = useState('');
+            const [uploadContent, setUploadContent] = useState('');
+            // Run from stage modal
+            const [showRunFrom, setShowRunFrom] = useState(false);
+            // Delete confirmation modal
+            const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+            // Streaming state
+            const [activeAgent, setActiveAgent] = useState(null);
+            const [streamingContent, setStreamingContent] = useState('');
+            const [streamingMsgId, setStreamingMsgId] = useState(null);
+            const streamMeta = useRef(null);
+            const msgEndRef = useRef(null);
+            const eventSourceRef = useRef(null);
+
+            useEffect(() => {
+                fetch(`${API_BASE}/api/config`).then(r => r.json()).then(setConfig).catch(() => {});
+                loadProjects();
+            }, []);
+
+            useEffect(() => {
+                if (msgEndRef.current) {
+                    msgEndRef.current.scrollIntoView({ behavior: 'smooth' });
+                }
+            }, [messages, streamingContent]);
+
+            const loadProjects = () => {
+                fetch(`${API_BASE}/api/projects`).then(r => r.json()).then(setProjects).catch(() => setProjects([]));
+            };
+
+            const connectSSE = useCallback((sid) => {
+                if (eventSourceRef.current) eventSourceRef.current.close();
+                const es = new EventSource(`${API_BASE}/api/stream/${sid}`);
+                eventSourceRef.current = es;
+                es.onmessage = (e) => {
+                    try {
+                        const evt = JSON.parse(e.data);
+                        if (evt.type === 'stage_done' || evt.type === 'forge_done') {
+                            setState(evt.state);
+                            setStreaming(false);
+                            setActiveAgent(null);
+                            setStreamingContent('');
+                            setStreamingMsgId(null);
+                            streamMeta.current = null;
+                            fetch(`${API_BASE}/api/artifacts/${sid}`)
+                                .then(r => r.json())
+                                .then(data => setArtifacts(data.artifacts || {}));
+                            loadProjects();
+                        } else if (evt.type === 'message_start') {
+                            setActiveAgent(evt.agent_id);
+                            setStreamingMsgId(evt.msg_id);
+                            setStreamingContent('');
+                            streamMeta.current = evt;
+                            // Auto-switch to the tab for the current stage
+                            if (evt.stage) setActiveTab(evt.stage);
+                        } else if (evt.type === 'token') {
+                            setStreamingContent(prev => prev + evt.content);
+                        } else if (evt.type === 'message') {
+                            setStreamingContent('');
+                            setStreamingMsgId(null);
+                            setActiveAgent(null);
+                            streamMeta.current = null;
+                            setMessages(prev => [...prev, evt]);
+                        } else {
+                            setMessages(prev => [...prev, evt]);
+                            if (evt.type === 'stage_start' && evt.stage) {
+                                setActiveTab(evt.stage);
+                                setState(prev => prev ? { ...prev, status: 'running' } : prev);
+                            }
+                        }
+                    } catch (err) {}
+                };
+                es.onerror = () => {};
+            }, []);
+
+            const createProject = async () => {
+                if (!newName.trim() || !newIdea.trim()) return;
+                setError(null);
+                try {
+                    const resp = await fetch(`${API_BASE}/api/start`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: newName.trim(), idea: newIdea.trim(), draft_mode: draftMode }),
+                    });
+                    const data = await resp.json();
+                    setSessionId(data.session_id);
+                    setState(data.state);
+                    setActiveProjectId(data.session_id);
+                    setMessages([]);
+                    setArtifacts({});
+                    setActiveTab('overview');
+                    setEditingArtifact(null);
+                    setShowNewProject(false);
+                    setNewName('');
+                    setNewIdea('');
+                    connectSSE(data.session_id);
+                    loadProjects();
+                } catch (e) {
+                    setError('Cannot connect to Product Forge server. Is it running on port 8010?');
+                }
+            };
+
+            const openProject = async (project) => {
+                setError(null);
+                setEditingArtifact(null);
+                try {
+                    const resp = await fetch(`${API_BASE}/api/project/${project.session_id}/resume`, { method: 'POST' });
+                    const data = await resp.json();
+                    setSessionId(project.session_id);
+                    setState(data.state);
+                    setActiveProjectId(project.session_id);
+                    const projResp = await fetch(`${API_BASE}/api/project/${project.session_id}`);
+                    const projData = await projResp.json();
+                    setMessages(projData.messages || []);
+                    setArtifacts(projData.artifacts || {});
+                    // Set active tab to the latest completed stage or overview
+                    const stages = data.state?.stages || [];
+                    const lastComplete = [...stages].reverse().find(s => s.status === 'complete');
+                    setActiveTab(lastComplete ? lastComplete.id : 'overview');
+                    connectSSE(project.session_id);
+                } catch (e) {
+                    setError('Failed to load project');
+                }
+            };
+
+            const runNextStage = async () => {
+                setError(null);
+                setStreaming(true);
+                try {
+                    const resp = await fetch(`${API_BASE}/api/run-stage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: sessionId }),
+                    });
+                    const data = await resp.json();
+                    if (data.error) { setError(data.error); setStreaming(false); }
+                } catch (e) {
+                    setError(`Request failed: ${e.message}`);
+                    setStreaming(false);
+                }
+            };
+
+            const runAllStages = async () => {
+                setError(null);
+                setStreaming(true);
+                try {
+                    await fetch(`${API_BASE}/api/run-all`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: sessionId }),
+                    });
+                } catch (e) {
+                    setError(`Request failed: ${e.message}`);
+                    setStreaming(false);
+                }
+            };
+
+            const upgradeToQuality = async () => {
+                setError(null);
+                setStreaming(true);
+                try {
+                    await fetch(`${API_BASE}/api/upgrade-quality`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: sessionId }),
+                    });
+                } catch (e) {
+                    setError(`Request failed: ${e.message}`);
+                    setStreaming(false);
+                }
+            };
+
+            const runFromStage = async (stageIdx) => {
+                setError(null);
+                setStreaming(true);
+                setShowRunFrom(false);
+                try {
+                    await fetch(`${API_BASE}/api/run-from-stage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: sessionId, stage_idx: stageIdx }),
+                    });
+                } catch (e) {
+                    setError(`Request failed: ${e.message}`);
+                    setStreaming(false);
+                }
+            };
+
+            const saveArtifact = async () => {
+                if (!editingArtifact || !editContent) return;
+                try {
+                    await fetch(`${API_BASE}/api/update-artifact`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: sessionId, artifact_name: editingArtifact, content: editContent }),
+                    });
+                    setArtifacts(prev => ({ ...prev, [editingArtifact]: editContent }));
+                    setEditingArtifact(null);
+                    setEditContent('');
+                } catch (e) {
+                    setError('Failed to save artifact');
+                }
+            };
+
+            const uploadDocument = async () => {
+                if (!uploadName.trim() || !uploadContent.trim()) return;
+                const docName = uploadName.trim().endsWith('.md') ? uploadName.trim() : uploadName.trim() + '.md';
+                try {
+                    await fetch(`${API_BASE}/api/upload-context`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: sessionId, name: docName, content: uploadContent.trim() }),
+                    });
+                    setArtifacts(prev => ({ ...prev, [docName]: uploadContent.trim() }));
+                    setShowUpload(false);
+                    setUploadName('');
+                    setUploadContent('');
+                } catch (e) {
+                    setError('Failed to upload document');
+                }
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setUploadName(file.name);
+                const reader = new FileReader();
+                reader.onload = (evt) => setUploadContent(evt.target.result);
+                reader.readAsText(file);
+            };
+
+            const deleteProject = async () => {
+                if (!sessionId) return;
+                try {
+                    const resp = await fetch(`${API_BASE}/api/project/${sessionId}`, { method: 'DELETE' });
+                    const data = await resp.json();
+                    if (data.error) { setError(data.error); return; }
+                    // Clean up local state
+                    if (eventSourceRef.current) eventSourceRef.current.close();
+                    setActiveProjectId(null);
+                    setSessionId(null);
+                    setState(null);
+                    setMessages([]);
+                    setArtifacts({});
+                    setActiveTab('overview');
+                    setEditingArtifact(null);
+                    setShowDeleteConfirm(false);
+                    loadProjects();
+                } catch (e) {
+                    setError('Failed to delete project');
+                }
+            };
+
+            // Get stage tabs from config
+            const stageTabs = config?.stages || [];
+            // Get messages for a specific stage
+            const getStageMessages = (stageId) => messages.filter(m => m.stage === stageId);
+            // Find which stage an artifact belongs to
+            const getArtifactStage = (artifactName) => {
+                const stage = stageTabs.find(s => s.artifact === artifactName);
+                return stage ? stage.id : null;
+            };
+
+            return (
+                <div className="h-full flex">
+                    {/* LEFT SIDEBAR */}
+                    <div className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+                        <div className="p-4 border-b border-gray-100">
+                            <div className="flex items-center gap-2 mb-3">
+                                <div className="w-7 h-7 bg-forge-100 rounded-lg flex items-center justify-center">
+                                    <svg className="w-3.5 h-3.5 text-forge-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+                                </div>
+                                <h1 className="text-sm font-bold text-gray-900">Product Forge</h1>
+                            </div>
+                            <button
+                                onClick={() => setShowNewProject(true)}
+                                className="w-full py-2 px-3 bg-forge-600 hover:bg-forge-700 text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
+                                New Project
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                            {projects.length === 0 && (
+                                <div className="text-center py-8 px-4">
+                                    <svg className="w-8 h-8 text-gray-200 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                                    <p className="text-xs text-gray-400">No projects yet</p>
+                                </div>
+                            )}
+                            {projects.map(p => (
+                                <button
+                                    key={p.session_id}
+                                    onClick={() => openProject(p)}
+                                    className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors group ${
+                                        activeProjectId === p.session_id
+                                            ? 'bg-forge-50 border border-forge-200'
+                                            : 'hover:bg-gray-50 border border-transparent'
+                                    }`}
+                                >
+                                    <p className={`text-xs font-medium truncate ${
+                                        activeProjectId === p.session_id ? 'text-forge-700' : 'text-gray-700 group-hover:text-gray-900'
+                                    }`}>{p.project_name || p.product_idea}</p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
+                                            p.status === 'complete' ? 'bg-green-100 text-green-700' :
+                                            p.status === 'running' ? 'bg-forge-100 text-forge-700' :
+                                            'bg-gray-100 text-gray-500'
+                                        }`}>{p.status}</span>
+                                        {p.token_usage?.total_cost_usd > 0 && (
+                                            <span className="text-[9px] text-gray-300">{formatCost(p.token_usage.total_cost_usd)}</span>
+                                        )}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+
+                        {config && (
+                            <div className="border-t border-gray-100 p-3">
+                                <h4 className="text-[9px] font-semibold text-gray-400 uppercase mb-1.5">Agent Team</h4>
+                                <div className="flex flex-wrap gap-1">
+                                    {config.agents.map(a => (
+                                        <span key={a.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] text-gray-500" title={a.name}>
+                                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: a.color }}></span>
+                                            {a.short}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* MAIN AREA */}
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* New Project Modal */}
+                        {showNewProject && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30">
+                                <div className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-lg mx-4 p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h2 className="text-lg font-bold text-gray-900">New Project</h2>
+                                        <button onClick={() => setShowNewProject(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                                    </div>
+                                    <p className="text-sm text-gray-500 mb-4">Give your project a name and describe what you want to build.</p>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-700 mb-1.5">Project Name</label>
+                                            <input
+                                                type="text"
+                                                value={newName}
+                                                onChange={e => setNewName(e.target.value)}
+                                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-forge-500 focus:border-forge-500 text-sm"
+                                                placeholder="e.g., ReceiptSnap, FleetTracker..."
+                                                autoFocus
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-700 mb-1.5">Product Description</label>
+                                            <textarea
+                                                value={newIdea}
+                                                onChange={e => setNewIdea(e.target.value)}
+                                                className="w-full h-28 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-forge-500 focus:border-forge-500 resize-none text-sm"
+                                                placeholder="Describe what the product does, who it's for, and the key problem it solves..."
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 flex items-center justify-between px-1">
+                                        <div className="flex items-center gap-3">
+                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" checked={draftMode} onChange={e => setDraftMode(e.target.checked)} className="sr-only peer" />
+                                                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-forge-500"></div>
+                                            </label>
+                                            <div>
+                                                <span className="text-xs font-medium text-gray-700">Draft Mode</span>
+                                                <p className="text-[10px] text-gray-400">{draftMode ? 'Fast & cheap (~$0.50-$1). Uses Haiku for all, skips critique rounds.' : 'Full quality (~$6-$7). Uses Sonnet for artifacts + critique-and-refine.'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end gap-3 mt-5">
+                                        <button onClick={() => setShowNewProject(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                                        <button
+                                            onClick={createProject}
+                                            disabled={!newName.trim() || !newIdea.trim()}
+                                            className="px-6 py-2 bg-forge-600 hover:bg-forge-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                                        >
+                                            Create Project
+                                        </button>
+                                    </div>
+                                    {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Upload Document Modal */}
+                        {showUpload && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30">
+                                <div className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-2xl mx-4 p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h2 className="text-lg font-bold text-gray-900">Upload Context Document</h2>
+                                        <button onClick={() => setShowUpload(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                                    </div>
+                                    <p className="text-sm text-gray-500 mb-4">Upload a document that will be added as context for generating artifacts. This could be existing specs, requirements, research, or any reference material.</p>
+                                    <div className="space-y-4">
+                                        <div className="flex gap-3">
+                                            <div className="flex-1">
+                                                <label className="block text-xs font-medium text-gray-700 mb-1.5">Document Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={uploadName}
+                                                    onChange={e => setUploadName(e.target.value)}
+                                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-forge-500 focus:border-forge-500 text-sm"
+                                                    placeholder="e.g., existing-requirements.md"
+                                                />
+                                            </div>
+                                            <div className="flex items-end">
+                                                <label className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg cursor-pointer transition-colors">
+                                                    Browse File
+                                                    <input type="file" accept=".md,.txt,.doc,.json" onChange={handleFileUpload} className="hidden" />
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-700 mb-1.5">Content</label>
+                                            <textarea
+                                                value={uploadContent}
+                                                onChange={e => setUploadContent(e.target.value)}
+                                                className="w-full h-64 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-forge-500 focus:border-forge-500 resize-none text-sm font-mono"
+                                                placeholder="Paste or type your document content here..."
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end gap-3 mt-5">
+                                        <button onClick={() => setShowUpload(false)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+                                        <button
+                                            onClick={uploadDocument}
+                                            disabled={!uploadName.trim() || !uploadContent.trim()}
+                                            className="px-6 py-2 bg-forge-600 hover:bg-forge-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                                        >
+                                            Upload
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Run From Stage Modal */}
+                        {showRunFrom && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30">
+                                <div className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-md mx-4 p-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h2 className="text-lg font-bold text-gray-900">Re-run From Stage</h2>
+                                        <button onClick={() => setShowRunFrom(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                                    </div>
+                                    <p className="text-sm text-gray-500 mb-4">Select a stage to regenerate from. All artifacts from that stage onwards will be recreated using the current context (including any edited documents).</p>
+                                    <div className="space-y-1.5">
+                                        {stageTabs.map((s, i) => (
+                                            <button
+                                                key={s.id}
+                                                onClick={() => runFromStage(i)}
+                                                disabled={streaming}
+                                                className="w-full text-left px-4 py-2.5 rounded-lg border border-gray-200 hover:border-forge-300 hover:bg-forge-50 transition-colors flex items-center gap-3 disabled:opacity-50"
+                                            >
+                                                <span className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-500">{i + 1}</span>
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-800">{s.name}</p>
+                                                    {s.artifact && <p className="text-[10px] text-gray-400">Produces: {s.artifact}</p>}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Delete Confirmation Modal */}
+                        {showDeleteConfirm && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/30">
+                                <div className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-sm mx-4 p-6">
+                                    <div className="flex flex-col items-center text-center">
+                                        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                                            <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                        </div>
+                                        <h2 className="text-lg font-bold text-gray-900 mb-2">Delete Project</h2>
+                                        <p className="text-sm text-gray-500 mb-1">Are you sure you want to delete</p>
+                                        <p className="text-sm font-semibold text-gray-800 mb-3">"{state?.project_name || state?.product_idea}"</p>
+                                        <p className="text-xs text-gray-400 mb-6">This will permanently remove the session data, all generated artifacts, and version history. This action cannot be undone.</p>
+                                        <div className="flex gap-3 w-full">
+                                            <button
+                                                onClick={() => setShowDeleteConfirm(false)}
+                                                className="flex-1 py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={deleteProject}
+                                                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+                                            >
+                                                Delete Project
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* No project selected */}
+                        {!activeProjectId && (
+                            <div className="flex-1 flex items-center justify-center">
+                                <div className="text-center max-w-md px-6">
+                                    <div className="inline-flex items-center justify-center w-16 h-16 bg-forge-50 rounded-2xl mb-4">
+                                        <svg className="w-8 h-8 text-forge-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                                        </svg>
+                                    </div>
+                                    <h2 className="text-xl font-bold text-gray-800 mb-2">Product Forge</h2>
+                                    {projects.length === 0 ? (
+                                        <>
+                                            <p className="text-sm text-gray-500 mb-6">10 AI agents collaborate to take your product idea from concept to implementation-ready specs.</p>
+                                            <button
+                                                onClick={() => setShowNewProject(true)}
+                                                className="px-6 py-3 bg-forge-600 hover:bg-forge-700 text-white font-medium rounded-lg transition-colors inline-flex items-center gap-2"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
+                                                Create Your First Project
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <p className="text-sm text-gray-500 mb-6">Select a project from the sidebar, or create a new one.</p>
+                                    )}
+                                    {config && (
+                                        <div className="mt-8">
+                                            <p className="text-[10px] text-gray-400 uppercase font-semibold mb-2">Pipeline Stages</p>
+                                            <div className="flex flex-wrap justify-center gap-1.5">
+                                                {config.stages.map((s, i) => (
+                                                    <span key={s.id} className="px-2 py-1 rounded text-[10px] font-medium bg-gray-50 text-gray-500 border border-gray-100">
+                                                        {i + 1}. {s.name}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Active project view */}
+                        {activeProjectId && (
+                            <div className="flex-1 flex flex-col overflow-hidden">
+                                {/* Project header */}
+                                <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-sm font-bold text-gray-900 truncate max-w-[400px]">{state?.project_name || state?.product_idea}</p>
+                                                {state?.draft_mode && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">DRAFT</span>}
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <span className="text-[10px] text-gray-400">Stage {(state?.current_stage || 0) + 1}/{state?.total_stages || 8}</span>
+                                                {state?.token_usage?.total_cost_usd > 0 && (
+                                                    <span className="text-[10px] text-gray-400">| {formatCost(state.token_usage.total_cost_usd)} | {formatTokens((state.token_usage.total_input_tokens || 0) + (state.token_usage.total_output_tokens || 0))} tokens</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                        {streaming && (
+                                            <span className="flex items-center gap-1.5 text-xs text-forge-600">
+                                                <span className="pulse-dot w-2 h-2 bg-forge-500 rounded-full"></span>
+                                                Working...
+                                            </span>
+                                        )}
+                                        {state?.status === 'complete' && (
+                                            <span className="text-xs text-green-600 font-medium bg-green-50 px-2 py-0.5 rounded">Complete</span>
+                                        )}
+                                        <button
+                                            onClick={() => setShowUpload(true)}
+                                            disabled={streaming}
+                                            className="py-1.5 px-3 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-gray-700 text-[11px] font-medium rounded-lg transition-colors flex items-center gap-1"
+                                            title="Upload context document"
+                                        >
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                            Upload
+                                        </button>
+                                        {state?.draft_mode && state?.status === 'complete' && (
+                                            <button
+                                                onClick={upgradeToQuality}
+                                                disabled={streaming}
+                                                className="py-1.5 px-3 bg-green-50 hover:bg-green-100 disabled:opacity-40 text-green-700 text-[11px] font-medium rounded-lg transition-colors border border-green-200 flex items-center gap-1"
+                                                title="Run critique-and-refine on all artifacts using Sonnet"
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+                                                Upgrade to Quality
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => setShowRunFrom(true)}
+                                            disabled={streaming}
+                                            className="py-1.5 px-3 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-700 text-[11px] font-medium rounded-lg transition-colors border border-amber-200"
+                                            title="Re-run from a specific stage"
+                                        >
+                                            Re-run From...
+                                        </button>
+                                        <button
+                                            onClick={runNextStage}
+                                            disabled={streaming || state?.status === 'complete'}
+                                            className="py-1.5 px-3 bg-forge-600 hover:bg-forge-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-[11px] font-medium rounded-lg transition-colors"
+                                        >
+                                            Next Stage
+                                        </button>
+                                        <button
+                                            onClick={runAllStages}
+                                            disabled={streaming || state?.status === 'complete'}
+                                            className="py-1.5 px-3 bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 disabled:text-gray-300 text-gray-700 text-[11px] font-medium rounded-lg transition-colors"
+                                        >
+                                            Run All
+                                        </button>
+                                        <button
+                                            onClick={() => setShowDeleteConfirm(true)}
+                                            disabled={streaming}
+                                            className="py-1.5 px-2.5 bg-white hover:bg-red-50 disabled:opacity-40 text-gray-400 hover:text-red-600 text-[11px] rounded-lg transition-colors border border-gray-200 hover:border-red-200"
+                                            title="Delete project"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                        </button>
+                                    </div>
+                                </header>
+
+                                {/* Stage Tabs */}
+                                <div className="bg-white border-b border-gray-200 px-4 flex items-center gap-0 overflow-x-auto flex-shrink-0">
+                                    <button
+                                        onClick={() => { setActiveTab('overview'); setEditingArtifact(null); }}
+                                        className={`px-3 py-2.5 text-[11px] font-medium whitespace-nowrap transition-colors ${activeTab === 'overview' ? 'tab-active' : 'tab-inactive'}`}
+                                    >
+                                        Overview
+                                    </button>
+                                    {stageTabs.map((s, i) => {
+                                        const stageState = state?.stages?.[i];
+                                        const hasMessages = getStageMessages(s.id).length > 0;
+                                        return (
+                                            <button
+                                                key={s.id}
+                                                onClick={() => { setActiveTab(s.id); setEditingArtifact(null); }}
+                                                className={`px-3 py-2.5 text-[11px] font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${activeTab === s.id ? 'tab-active' : 'tab-inactive'}`}
+                                            >
+                                                {stageState?.status === 'complete' && (
+                                                    <svg className="w-3 h-3 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                                                )}
+                                                {stageState?.status === 'running' && (
+                                                    <span className="pulse-dot w-2 h-2 bg-forge-500 rounded-full"></span>
+                                                )}
+                                                {s.name}
+                                            </button>
+                                        );
+                                    })}
+                                    <button
+                                        onClick={() => { setActiveTab('documents'); setEditingArtifact(null); }}
+                                        className={`px-3 py-2.5 text-[11px] font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${activeTab === 'documents' ? 'tab-active' : 'tab-inactive'}`}
+                                    >
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                        Documents ({Object.keys(artifacts).length})
+                                    </button>
+                                </div>
+
+                                {/* Tab content */}
+                                <div className="flex-1 overflow-y-auto bg-gray-50">
+                                    {/* Overview tab */}
+                                    {activeTab === 'overview' && (
+                                        <div className="p-6 max-w-4xl mx-auto space-y-6">
+                                            <div className="bg-white rounded-xl border border-gray-200 p-5">
+                                                <h3 className="text-sm font-bold text-gray-900 mb-2">Project Summary</h3>
+                                                {state?.project_name && <p className="text-xs text-gray-500 mb-1"><span className="font-medium text-gray-700">Name:</span> {state.project_name}</p>}
+                                                <p className="text-xs text-gray-500"><span className="font-medium text-gray-700">Description:</span> {state?.product_idea}</p>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                                                    <h4 className="text-[10px] font-semibold text-gray-400 uppercase mb-3">Pipeline Progress</h4>
+                                                    <div className="space-y-2">
+                                                        {(state?.stages || []).map((s, i) => (
+                                                            <div key={s.id} className="flex items-center gap-2">
+                                                                {s.status === 'complete' ? (
+                                                                    <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                                                                ) : s.status === 'running' ? (
+                                                                    <span className="pulse-dot w-3.5 h-3.5 bg-forge-500 rounded-full flex-shrink-0"></span>
+                                                                ) : (
+                                                                    <span className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0"></span>
+                                                                )}
+                                                                <span className={`text-xs ${s.status === 'complete' ? 'text-green-700 font-medium' : s.status === 'running' ? 'text-forge-700 font-medium' : 'text-gray-400'}`}>
+                                                                    {s.name}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                                                    <h4 className="text-[10px] font-semibold text-gray-400 uppercase mb-3">Cost & Usage</h4>
+                                                    {state?.token_usage?.by_model && Object.keys(state.token_usage.by_model).length > 0 ? (
+                                                        <div className="space-y-1.5">
+                                                            {Object.entries(state.token_usage.by_model).map(([model, data]) => (
+                                                                <div key={model} className="flex justify-between text-xs">
+                                                                    <span className="text-gray-500">{model.replace('claude-', '')}</span>
+                                                                    <span className="text-gray-700 font-medium">{data.calls} calls / {formatCost(data.cost_usd)}</span>
+                                                                </div>
+                                                            ))}
+                                                            <div className="flex justify-between text-xs font-bold pt-2 border-t border-gray-100">
+                                                                <span className="text-gray-700">Total</span>
+                                                                <span className="text-gray-900">{formatCost(state.token_usage.total_cost_usd)}</span>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-xs text-gray-400">No usage yet. Run stages to see cost breakdown.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {Object.keys(artifacts).length > 0 && (
+                                                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                                                    <h4 className="text-[10px] font-semibold text-gray-400 uppercase mb-3">Generated Documents</h4>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        {Object.keys(artifacts).map(name => (
+                                                            <button
+                                                                key={name}
+                                                                onClick={() => { setActiveTab('documents'); setEditingArtifact(null); }}
+                                                                className="text-left px-3 py-2 rounded-lg border border-gray-100 hover:border-forge-200 hover:bg-forge-50 transition-colors"
+                                                            >
+                                                                <p className="text-xs font-medium text-gray-700 truncate">{name}</p>
+                                                                <p className="text-[9px] text-gray-400 mt-0.5">{(artifacts[name]?.length || 0).toLocaleString()} chars</p>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Documents tab */}
+                                    {activeTab === 'documents' && (
+                                        <div className="p-6 max-w-5xl mx-auto">
+                                            <div className="flex items-center justify-between mb-4">
+                                                <h2 className="text-sm font-bold text-gray-900">All Documents & Artifacts</h2>
+                                                <button
+                                                    onClick={() => setShowUpload(true)}
+                                                    className="py-1.5 px-3 bg-forge-600 hover:bg-forge-700 text-white text-[11px] font-medium rounded-lg transition-colors flex items-center gap-1"
+                                                >
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"/></svg>
+                                                    Upload Document
+                                                </button>
+                                            </div>
+
+                                            {editingArtifact ? (
+                                                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-bold text-gray-800">Editing: {editingArtifact}</span>
+                                                            <span className="text-[9px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded font-medium">EDIT MODE</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button onClick={() => { setEditingArtifact(null); setEditContent(''); }} className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800">Cancel</button>
+                                                            <button onClick={saveArtifact} className="px-3 py-1.5 bg-forge-600 hover:bg-forge-700 text-white text-xs font-medium rounded-lg">Save Changes</button>
+                                                        </div>
+                                                    </div>
+                                                    <textarea
+                                                        value={editContent}
+                                                        onChange={e => setEditContent(e.target.value)}
+                                                        className="w-full h-[600px] p-4 text-sm font-mono resize-none focus:outline-none editor-textarea"
+                                                    />
+                                                    <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                                                        <p className="text-[10px] text-gray-400">After saving, use "Re-run From..." to regenerate downstream documents with your changes.</p>
+                                                        <p className="text-[10px] text-gray-400">{editContent.length.toLocaleString()} chars</p>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {Object.keys(artifacts).length === 0 ? (
+                                                        <div className="text-center py-12 text-gray-400">
+                                                            <p className="text-sm">No documents yet. Run stages or upload a context document.</p>
+                                                        </div>
+                                                    ) : Object.entries(artifacts).map(([name, content]) => {
+                                                        const versions = state?.artifact_versions?.[name] || [];
+                                                        return (
+                                                        <div key={name} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                                                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                                                                <div className="flex items-center gap-2">
+                                                                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                                                    <span className="text-xs font-bold text-gray-800">{name}</span>
+                                                                    {state?.token_usage?.by_artifact?.[name] && (
+                                                                        <span className="text-[9px] text-gray-400">{formatCost(state.token_usage.by_artifact[name].cost_usd)}</span>
+                                                                    )}
+                                                                    {versions.length > 0 && (
+                                                                        <span className="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-medium">v{versions.length + 1} ({versions.length} prior)</span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    {versions.length > 0 && (
+                                                                        <select
+                                                                            onChange={async (e) => {
+                                                                                const ver = parseInt(e.target.value);
+                                                                                if (!ver) return;
+                                                                                const resp = await fetch(`${API_BASE}/api/artifact/${sessionId}/${name}/version/${ver}`);
+                                                                                const data = await resp.json();
+                                                                                if (data.content) { setEditingArtifact(name); setEditContent(data.content); }
+                                                                                e.target.value = '';
+                                                                            }}
+                                                                            className="text-[10px] text-gray-500 border border-gray-200 rounded px-1.5 py-1 bg-white"
+                                                                            defaultValue=""
+                                                                        >
+                                                                            <option value="" disabled>History</option>
+                                                                            {versions.map(v => (
+                                                                                <option key={v.version} value={v.version}>v{v.version} — {v.reason} ({new Date(v.timestamp).toLocaleString()})</option>
+                                                                            ))}
+                                                                        </select>
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => { setEditingArtifact(name); setEditContent(content); }}
+                                                                        className="py-1 px-2.5 bg-white hover:bg-gray-100 border border-gray-200 text-gray-600 text-[10px] font-medium rounded-lg transition-colors flex items-center gap-1"
+                                                                    >
+                                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                                        Edit
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div className="px-4 py-3 max-h-48 overflow-y-auto">
+                                                                <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMd(content?.slice(0, 2000) + (content?.length > 2000 ? '\n\n---\n*[Truncated preview — click Edit to see full content]*' : '')) }} />
+                                                            </div>
+                                                        </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Stage-specific conversation tab */}
+                                    {activeTab !== 'overview' && activeTab !== 'documents' && (
+                                        <div className="flex h-full">
+                                            {/* Conversation messages for this stage */}
+                                            <div className="flex-1 overflow-y-auto p-4 space-y-2 max-w-4xl mx-auto">
+                                                {(() => {
+                                                    const stageMessages = getStageMessages(activeTab);
+                                                    const stageConfig = stageTabs.find(s => s.id === activeTab);
+                                                    const stageIdx = stageTabs.findIndex(s => s.id === activeTab);
+                                                    const stageStatus = state?.stages?.[stageIdx]?.status;
+
+                                                    if (stageMessages.length === 0 && !streaming) {
+                                                        return (
+                                                            <div className="flex items-center justify-center h-64">
+                                                                <div className="text-center">
+                                                                    <p className="text-sm text-gray-400">{stageConfig?.description || 'No activity yet'}</p>
+                                                                    {stageStatus === 'pending' && (
+                                                                        <p className="text-[10px] text-gray-300 mt-2">This stage hasn't been run yet.</p>
+                                                                    )}
+                                                                    {stageConfig?.participants && (
+                                                                        <div className="mt-3 flex items-center justify-center gap-1.5">
+                                                                            <span className="text-[9px] text-gray-300 mr-1">Participants:</span>
+                                                                            {stageConfig.participants.map(pid => {
+                                                                                const agent = config?.agents?.find(a => a.id === pid);
+                                                                                return agent ? (
+                                                                                    <span key={pid} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-50 rounded text-[9px] text-gray-500 border border-gray-100">
+                                                                                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: agent.color }}></span>
+                                                                                        {agent.short}
+                                                                                    </span>
+                                                                                ) : null;
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <>
+                                                            {stageConfig && (
+                                                                <div className="py-2 mb-2">
+                                                                    <p className="text-center text-[10px] text-gray-400">{stageConfig.description}</p>
+                                                                </div>
+                                                            )}
+                                                            {stageMessages.map((msg, i) => {
+                                                                if (msg.type === 'round_start') {
+                                                                    return (
+                                                                        <div key={i} className="text-center py-0.5">
+                                                                            <span className="text-[9px] text-gray-300 uppercase tracking-wider">Round {msg.round}</span>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                if (msg.type === 'message') {
+                                                                    return (
+                                                                        <div key={i} className="slide-in">
+                                                                            <div className={`bg-white rounded-lg border shadow-sm overflow-hidden ${msg.is_artifact ? 'border-forge-300 ring-1 ring-forge-100' : 'border-gray-200'}`}>
+                                                                                <div className={`px-3 py-1.5 border-b flex items-center gap-2 ${msg.is_artifact ? 'bg-forge-50 border-forge-100' : 'bg-gray-50 border-gray-100'}`}>
+                                                                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: msg.agent_color }}></span>
+                                                                                    <span className="text-[11px] font-bold" style={{ color: msg.agent_color }}>{msg.agent_name}</span>
+                                                                                    <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded font-mono">{msg.agent_short}</span>
+                                                                                    {msg.is_artifact && <span className="text-[8px] text-forge-500 bg-forge-100 px-1.5 py-0.5 rounded font-medium">ARTIFACT</span>}
+                                                                                    {msg.model && <span className="text-[8px] text-gray-300 font-mono">{msg.model.replace('claude-', '')}</span>}
+                                                                                    <span className="text-[9px] text-gray-300 ml-auto">r{msg.round}</span>
+                                                                                    {msg.usage && <span className="text-[8px] text-gray-300">{formatTokens(msg.usage.output_tokens)} / {formatCost(msg.usage.cost_usd)}</span>}
+                                                                                </div>
+                                                                                <div className="px-3 py-2">
+                                                                                    <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMd(msg.content) }} />
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                if (msg.type === 'artifact_created') {
+                                                                    return (
+                                                                        <div key={i} className="slide-in flex justify-center py-2">
+                                                                            <button
+                                                                                onClick={() => { setActiveTab('documents'); }}
+                                                                                className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg text-[11px] text-green-700 font-medium hover:bg-green-100 transition-colors"
+                                                                            >
+                                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                                                                {msg.artifact_name} created
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                if (msg.type === 'stage_complete') {
+                                                                    return (
+                                                                        <div key={i} className="text-center py-1.5">
+                                                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-green-50 border border-green-200 rounded-full text-[10px] text-green-600 font-medium">
+                                                                                <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                                                                                Stage complete
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })}
+                                                            {/* Live streaming in this tab */}
+                                                            {streamingMsgId && streamMeta.current && streamMeta.current.stage === activeTab && (
+                                                                <div className="slide-in">
+                                                                    <div className="bg-white rounded-lg border border-forge-300 shadow-sm overflow-hidden ring-1 ring-forge-100">
+                                                                        <div className="px-3 py-1.5 bg-forge-50 border-b border-forge-100 flex items-center gap-2">
+                                                                            <span className="pulse-dot w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: streamMeta.current.agent_color }}></span>
+                                                                            <span className="text-[11px] font-bold" style={{ color: streamMeta.current.agent_color }}>{streamMeta.current.agent_name}</span>
+                                                                            <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded font-mono">{streamMeta.current.agent_short}</span>
+                                                                            {streamMeta.current.is_artifact && <span className="text-[8px] text-forge-500 bg-forge-100 px-1.5 py-0.5 rounded font-medium">ARTIFACT</span>}
+                                                                            {streamMeta.current.model && <span className="text-[8px] text-gray-300 font-mono">{streamMeta.current.model.replace('claude-', '')}</span>}
+                                                                            <span className="inline-flex items-center gap-1 text-[9px] text-forge-500 font-medium ml-auto">
+                                                                                <span className="pulse-dot w-1.5 h-1.5 bg-forge-400 rounded-full"></span>
+                                                                                typing
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="px-3 py-2 min-h-[2rem]">
+                                                                            {streamingContent ? (
+                                                                                <div className="markdown-body" dangerouslySetInnerHTML={{ __html: renderMd(streamingContent) }} />
+                                                                            ) : (
+                                                                                <span className="text-xs text-gray-400 italic">thinking...</span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {streaming && streamMeta.current?.stage === activeTab && !streamingMsgId && (
+                                                                <div className="text-center py-3">
+                                                                    <span className="inline-flex items-center gap-2 text-xs text-forge-600 bg-forge-50 px-3 py-1.5 rounded-full border border-forge-200">
+                                                                        <span className="pulse-dot w-2 h-2 bg-forge-500 rounded-full"></span>
+                                                                        Preparing next agent...
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                            <div ref={msgEndRef} />
+                                                        </>
+                                                    );
+                                                })()}
+                                            </div>
+
+                                            {/* Right sidebar: participants for this stage */}
+                                            <div className="w-44 border-l border-gray-200 bg-white flex-shrink-0 overflow-y-auto">
+                                                <div className="p-3 border-b border-gray-100">
+                                                    <h3 className="text-[9px] font-semibold text-gray-400 uppercase">Stage Participants</h3>
+                                                </div>
+                                                <div className="p-2 space-y-0.5">
+                                                    {(() => {
+                                                        const stageConfig = stageTabs.find(s => s.id === activeTab);
+                                                        const participants = stageConfig?.participants || [];
+                                                        return (config?.agents || []).filter(a => participants.includes(a.id)).map(a => {
+                                                            const msgCount = messages.filter(m => m.type === 'message' && m.agent_id === a.id && m.stage === activeTab).length;
+                                                            const isActive = activeAgent === a.id;
+                                                            return (
+                                                                <div key={a.id} className={`px-2 py-1.5 rounded-lg flex items-center gap-2 text-[11px] transition-all ${
+                                                                    isActive ? 'bg-forge-50 border border-forge-200 shadow-sm' :
+                                                                    msgCount > 0 ? 'bg-gray-50' : ''
+                                                                }`}>
+                                                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isActive ? 'pulse-dot' : ''}`} style={{ backgroundColor: a.color }}></span>
+                                                                    <span className={`truncate ${isActive ? 'text-forge-700 font-bold' : msgCount > 0 ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>{a.name}</span>
+                                                                    {isActive && <span className="ml-auto text-[8px] text-forge-500 font-medium">speaking</span>}
+                                                                    {!isActive && msgCount > 0 && <span className="ml-auto text-[9px] text-gray-400">{msgCount}</span>}
+                                                                </div>
+                                                            );
+                                                        });
+                                                    })()}
+                                                </div>
+
+                                                {/* Stage artifact quick link */}
+                                                {(() => {
+                                                    const stageConfig = stageTabs.find(s => s.id === activeTab);
+                                                    if (stageConfig?.artifact && artifacts[stageConfig.artifact]) {
+                                                        return (
+                                                            <div className="border-t border-gray-100 p-2 mt-2">
+                                                                <h4 className="text-[9px] font-semibold text-gray-400 uppercase px-2 mb-1.5">Artifact</h4>
+                                                                <button
+                                                                    onClick={() => { setActiveTab('documents'); setEditingArtifact(stageConfig.artifact); setEditContent(artifacts[stageConfig.artifact]); }}
+                                                                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] hover:bg-gray-100 text-gray-600 flex items-center gap-1.5"
+                                                                >
+                                                                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                                                    Edit {stageConfig.artifact}
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Error toast */}
+                    {error && !showNewProject && (
+                        <div className="fixed bottom-4 right-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs max-w-sm shadow-lg flex items-start gap-2 z-40">
+                            <span className="flex-1">{error}</span>
+                            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 font-bold">&times;</button>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

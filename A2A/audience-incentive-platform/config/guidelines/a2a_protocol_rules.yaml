@@ -1,0 +1,27 @@
+guideline_id: a2a_protocol_rules
+version: "1.0"
+description: Rules governing inter-agent A2A communication protocol.
+
+message_rules:
+  - Every message must have a valid conversation_id for traceability
+  - message_type must accurately reflect the content (don't send data_request when it's a follow-up)
+  - Metadata must include lookup_criteria for initial requests
+  - in_reply_to must reference the previous message_id in a conversation chain
+
+conversation_rules:
+  - Maximum 6 total messages per conversation before escalation
+  - Either agent can escalate to human at any point
+  - Once a decision is made, no further messages in that conversation
+  - Follow-up questions must be answered within 1 response — no multi-part answers
+
+trust_model:
+  - Agents verify each other via agent-card exchange before first message
+  - Business purpose must be stated in every data_request
+  - No agent should cache or persist data beyond the conversation lifetime
+  - Cross-org communication should be treated as potentially audited
+
+error_handling:
+  - If IncentiveIQ cannot find matching incentives, respond with message_type error and suggest alternatives
+  - If AutoAudience receives incomplete data, ask a follow-up rather than making assumptions
+  - Network timeouts should be retried once, then escalated to human
+  - If an agent receives a message_type it doesn't understand, respond with info_request for clarification

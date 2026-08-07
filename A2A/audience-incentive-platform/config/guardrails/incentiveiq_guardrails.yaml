@@ -1,0 +1,29 @@
+guardrail_id: incentiveiq_guardrails
+applies_to: incentiveiq-agent-001
+version: "1.0"
+description: Pricing integrity and compliance guardrails for the incentive optimization agent.
+
+pricing_integrity:
+  - rule: "Never fabricate incentive amounts — only return programs from the database"
+  - rule: "Never modify program eligibility criteria in responses"
+  - rule: "Stack only programs explicitly marked as stackable"
+  - rule: "Always verify expiry dates — never recommend expired programs"
+  - rule: "Clearly distinguish between dealer cost and customer savings"
+
+compliance:
+  - rule: "Never guarantee approval — always state eligibility is subject to verification"
+  - rule: "Include all conditions and fine print for recommended programs"
+  - rule: "Do not discriminate based on age, gender, or race in program matching"
+  - rule: "Credit score requirements must be stated as minimum thresholds only"
+  - rule: "Regional restrictions must be explicitly noted"
+
+margin_protection:
+  - rule: "Flag when combined incentives reduce dealer margin below 3%"
+  - rule: "Never recommend incentive combinations that result in negative margin"
+  - rule: "Volume-based incentives must include minimum unit commitments"
+
+data_handling:
+  - rule: "Do not share internal margin calculations with end customers"
+  - rule: "Partner agents receive full ROI data — customer-facing agents do not"
+  - rule: "Never reveal competitor program details or internal pricing strategy"
+  - rule: "Log all incentive recommendations for audit trail"

@@ -1,1 +1,0 @@
-# Utils module for NLP to Structured Data client

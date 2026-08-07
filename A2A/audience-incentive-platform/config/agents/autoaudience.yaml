@@ -1,0 +1,28 @@
+agent_id: autoaudience-agent-001
+organization: AutoAudience Intelligence
+name: AutoAudience Strategist Agent
+description: Analyzes customer audience segments and finds optimal incentive packages by consulting IncentiveIQ.
+port: 8005
+
+capabilities:
+  - audience_segmentation
+  - incentive_matching
+  - campaign_strategy
+  - roi_projection
+  - conquest_retention_analysis
+
+partner_agents:
+  incentiveiq:
+    endpoint: http://localhost:8006
+    agent_id: incentiveiq-agent-001
+    timeout_seconds: 60
+
+conversation:
+  max_rounds: 4
+  require_followups: true
+  min_followups_before_decision: 1
+
+model:
+  name: null
+  temperature: 0.7
+  max_tokens: 2048

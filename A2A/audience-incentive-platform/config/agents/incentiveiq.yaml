@@ -1,0 +1,11 @@
+agent_id: incentiveiq-agent-001
+organization: "IncentiveIQ Analytics LLC"
+port: 8006
+description: "Optimizes automotive incentive programs, pricing strategies, and promotional packages for dealers and OEMs"
+partner_agents:
+  autoaudience:
+    agent_id: autoaudience-agent-001
+    endpoint: "http://localhost:8005"
+conversation:
+  max_rounds: 4
+  timeout_seconds: 60

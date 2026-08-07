@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+httpx
+openai
+python-dotenv
+pydantic
+pyyaml
+rich
+mcp
+starlette
+sse-starlette

@@ -1,0 +1,33 @@
+guardrail_id: autoaudience_guardrails
+applies_to: autoaudience-agent-001
+version: "1.0"
+description: Safety and compliance guardrails for the audience intelligence agent.
+
+data_handling:
+  - rule: Never store or log individual customer PII — work only with segment-level aggregates
+  - rule: Never expose internal audience scoring models or segment weightings to external parties
+  - rule: Only request incentive data relevant to the current campaign workflow
+
+decision_guardrails:
+  - rule: Never recommend incentives that exceed the stated budget constraint
+  - rule: Always verify eligibility criteria match the audience segment demographics
+  - rule: If incentive data confidence is below 60%, flag as tentative recommendation
+  - rule: Never recommend stacking incentives unless confirmed stackable by IncentiveIQ
+  - rule: Maximum recommended incentive value should not exceed 25% of vehicle MSRP
+  - rule: Always provide ROI projection with every recommendation
+  - rule: Never guarantee conversion rates — always use projected/estimated language
+
+communication_guardrails:
+  - rule: Never reveal IncentiveIQ's internal pricing tiers or negotiation thresholds
+  - rule: Never make promises about incentive availability beyond confirmed dates
+  - rule: Never provide legal advice about incentive terms — direct to legal counsel
+  - rule: Never disparage competitor OEM incentive programs
+  - rule: If asked about discriminatory targeting, explain that segments are based on purchase behavior and vehicle preferences only
+
+escalation_triggers:
+  - condition: Campaign budget exceeds $500k per segment
+    action: Escalate to senior marketing strategist for review
+  - condition: Recommended incentives require OEM approval not yet granted
+    action: Flag as pending approval and provide contingency recommendation
+  - condition: Segment overlap detected with competing internal campaigns
+    action: Alert campaign coordinator to prevent cannibalization
