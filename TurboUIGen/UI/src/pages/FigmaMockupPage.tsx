@@ -752,7 +752,7 @@ export default function FigmaMockupPage() {
     const screens = pb.screens.split(',').map(s => s.trim()).filter(Boolean)
     const screenList = screens.length
       ? screens.map((s, i) => `Screen ${i + 1}: ${s}`).join(', ')
-      : 'Dashboard, Details, Settings'
+      : 'Screen 1, Screen 2, Screen 3'
     const parts = [
       `Create a ${screens.length || 3}-screen ${pb.layout.toLowerCase()} web app`,
       pb.appName ? `called "${pb.appName}"` : '',

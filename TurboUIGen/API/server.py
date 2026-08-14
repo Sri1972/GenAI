@@ -46,12 +46,20 @@ class GenerateRequest(BaseModel):
     project_name: str | None = None
     figma_url: str | None = None
     instructions: str = ""   # optional Markdown instructions appended to prompt
+    architecture: dict | None = None  # pre-approved architecture from /api/draft (skips Stage 1)
+
+
+class DraftRequest(BaseModel):
+    prompt: str
+    project_name: str | None = None
+    instructions: str = ""
 
 class RefineRequest(BaseModel):
     prompt: str
     project_name: str
     comment: str = ""         # optional user note shown in history
     instructions: str = ""    # optional Markdown instructions
+    architecture: dict | None = None  # pre-approved architecture from /api/draft (uses pipeline instead of diff)
 
 class CreateProjectRequest(BaseModel):
     name: str
@@ -96,6 +104,64 @@ async def ds_info():
         "ds_root": str(DS_ROOT),
         "storybook_url": STORYBOOK_URL,
     }
+
+
+# ── Draft Preview ────────────────────────────────────────────────────────────
+
+@app.post("/api/draft")
+async def api_draft(req: DraftRequest):
+    """
+    Run only Stage 1 (UX Architect) and return a Markdown wireframe preview.
+    Fast (~5-10s), cheap (~4K tokens). User approves before full generation.
+    """
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            _executor,
+            lambda: _run_draft(req),
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
+
+def _run_draft(req: DraftRequest) -> dict:
+    from agents.draft_preview import generate_draft
+    result = generate_draft(
+        prompt=req.prompt,
+        instructions=req.instructions or "",
+        project_name=req.project_name or None,
+    )
+    # Persist draft to project directory so it survives restarts
+    _save_draft_to_disk(req.project_name or result.get("projectName", ""), result)
+    return result
+
+
+def _save_draft_to_disk(project_name: str, draft: dict):
+    """Save draft JSON to .draft.json inside the project directory."""
+    import json as _json, re as _re
+    from agents.uigen_agent import GENERATED_DIR
+    slug = _re.sub(r"[^a-z0-9-]", "-", project_name.lower()).strip("-")
+    if not slug:
+        return
+    project_dir = GENERATED_DIR / slug
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / ".draft.json").write_text(_json.dumps(draft, indent=2), encoding="utf-8")
+
+
+@app.get("/api/projects/{project_name}/draft")
+async def api_get_draft(project_name: str):
+    """Load a previously saved draft from disk."""
+    import json as _json
+    from agents.uigen_agent import GENERATED_DIR
+    draft_file = GENERATED_DIR / project_name / ".draft.json"
+    if not draft_file.exists():
+        return None
+    try:
+        return _json.loads(draft_file.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 # ── API ───────────────────────────────────────────────────────────────────────
@@ -230,10 +296,13 @@ def _run_generate(req: GenerateRequest, request_id: str = "") -> dict:
                 "LiteLLM authentication failed. "
                 "Check that LITELLM_API_KEY is correct in .env."
             )
-        if "ConnectError" in type(e).__name__ or "Connection" in err_str:
+        if "Both LiteLLM and Bedrock failed" in err_str:
+            raise  # Already has a clear message with both errors
+        if "ConnectError" in type(e).__name__ or ("Connection" in err_str and "Bedrock" not in err_str):
             raise RuntimeError(
-                "Cannot connect to LiteLLM proxy. "
-                "Check that LITELLM_API_BASE is reachable and LITELLM_SSL_CERT is valid in .env."
+                "Cannot connect to LiteLLM proxy and Bedrock fallback also failed. "
+                "Check that LITELLM_API_BASE is reachable (or AWS credentials for Bedrock). "
+                f"Original error: {err_str[:300]}"
             )
         try:
             print(f"\n{'='*60}\n[GENERATE ERROR] {type(e).__name__}: {e}\n{tb}\n{'='*60}\n", flush=True)
@@ -258,7 +327,7 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
         _patch_vite_for_ds,
     )
 
-    # ── Figma URL → REST API screenshots + wiring → Claude → HTML/CSS/JS ────────
+    # ── Figma URL → Screenshots + Wiring → Requirements → React/SQLite pipeline ──
     if req.figma_url and req.figma_url.strip():
         import re as _re2
         from agents.figma_to_web_using_api_agent import run as figma_run
@@ -266,8 +335,6 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
         _url_type_m = _re2.search(r"figma\.com/(file|design|proto|make)/", req.figma_url, _re2.IGNORECASE)
         _url_type = _url_type_m.group(1).lower() if _url_type_m else "design"
         _is_rest = _url_type in ("design", "file")
-        # design/file → REST API: show "Fetching Figma design data" then "Exporting Figma frames"
-        # proto/make  → Playwright: show "Exporting Figma frames" directly
         if _is_rest:
             _progress("figma_api")
         _progress("screenshot_start")
@@ -280,19 +347,11 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
         )
         _progress(f"screenshot_done:{len(raw.get('screenshots', []))}")
 
-        # Use user's project name if provided, otherwise use what figma_run resolved
-        project_name = req.project_name or raw["project_name"]
-        if req.project_name:
-            import re as _re
-            project_name = _re.sub(r"[^a-z0-9-]", "-", req.project_name.lower()).strip("-") or raw["project_name"]
+        project_name = raw["project_name"]
         _write_meta(project_name, req.figma_url.strip(), req.prompt,
                     title=raw.get("title", ""), has_app=True)
         _append_buildlog(project_name, _progress_logs.get(request_id, []),
                          event="Built from Figma", duration_s=_time.time()-_t0)
-
-        # Start an HTTP server for the generated project
-        from agents.figma_to_web_using_playwright_agent import start_figma_project
-        server_info = start_figma_project(project_name)
 
         # ── Token usage summary ───────────────────────────────────────────────
         for _line in token_tracker.format_summary(request_id, elapsed=_time.time() - _t0):
@@ -303,16 +362,14 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
             "projectName": project_name,
             "title":       raw.get("title", project_name),
             "description": f"Generated from Figma: {req.figma_url.strip()[:60]}",
-            "port":        server_info["port"],
-            "url":         server_info["url"],
+            "port":        raw.get("port"),
+            "url":         raw.get("url"),
             "files":       raw.get("files", []),
-            "type":        "html",
+            "type":        "react",
         }
 
-    # ── Text prompt → React/TS/Tailwind/Vite ─────────────────────────────────
-    from agents.uigen_agent import _call_llm
-    from agents.prompts import SYSTEM_PROMPT
-    _progress("llm")
+    # ── Text prompt → Multi-agent pipeline → React/TS/Tailwind/Vite ──────────
+    from agents.uigen_agent import generate_project
 
     # Build the full user message — append Markdown instructions if provided
     instructions = (req.instructions or "").strip()
@@ -324,136 +381,34 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
             f"## Detailed Instructions\n\n{instructions}"
         )
 
-    _progress("llm_codegen:Asking Claude to generate React/TS/Tailwind app…")
-    data = _call_llm([
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": user_content},
-    ], progress=_progress)
-
-    # ── Resolve project name — user's name ALWAYS wins ────────────────────────
+    # Resolve project name override
+    project_name_override = None
     if req.project_name:
-        project_name = re.sub(r"[^a-z0-9-]", "-", req.project_name.lower()).strip("-") or "app"
-    else:
-        project_name = re.sub(r"[^a-z0-9-]", "-", data.get("projectName","app").lower()).strip("-") or "app"
+        project_name_override = re.sub(r"[^a-z0-9-]", "-", req.project_name.lower()).strip("-") or None
 
-    files = data.get("files", {})
-    if not files:
-        raise RuntimeError("LLM returned no files")
-
-    n_files = len(files)
-    _progress(f"llm_codegen:Claude returned {n_files} files for '{data.get('title', project_name)}'")
-
-    # Validate JSON data files — regenerate if empty/invalid
-    files = _validate_json_files(files, req.prompt, instructions, _progress)
-
-    # Fix common LLM mistakes — centralized character sanitization first
-    from agents.sanitize_js import sanitize_files as _sanitize_files
-    files = _sanitize_files(files)
-    files = _fix_json_named_imports(files)
-    files = _fix_data_index(files)
-    files = _fix_main_tsx(files, project_name)
-    files = _fix_custom_components(files)
-    files = _fix_ds_imports(files)
-    files = _fix_pptx_export(files)
-    files = _fix_d3_chart_code(files)
-
-    # ── API-first: ensure schema exists, bundle API server, strip data imports ─
-    from agents.uigen_agent import _bundle_api_server, _ensure_schema_sql, _api_ports, _next_api_port
-    from agents.postprocessors import _strip_data_imports
-    files = _ensure_schema_sql(files)
-    files = _bundle_api_server(files)
-    files = _strip_data_imports(files)
-
-    # ── Assign ports ───────────────────────────────────────────────────────────
-    port = _dev_ports.get(project_name) or _next_port()
-    _dev_ports[project_name] = port
-
-    # Assign API port if this project has an API server
-    has_api_files = (
-        "api/app_server.py" in files or "app_server.py" in files
-        or "api_server.py" in files
-        or "api/schema.sql" in files or "schema.sql" in files
-    )
-    api_port = _api_ports.get(project_name)
-    if has_api_files and not api_port:
-        api_port = _next_api_port()
-        _api_ports[project_name] = api_port
-    _save_ports()
-
-    # Patch .env with the correct dynamic API port
-    if api_port and "api/.env" in files:
-        import re as _re_env
-        files["api/.env"] = _re_env.sub(r"API_PORT=\d+", f"API_PORT={api_port}", files["api/.env"])
-
-    # ── Run all post-processors (DS alias, proxy injection, map fixes, etc.) ──
-    from agents.postprocessors import run_all_postprocessors
-    project_dir = GENERATED_DIR / project_name
-    files = run_all_postprocessors(
-        files, project_dir=project_dir, project_name=project_name,
-        port=port, api_port=api_port or 0
+    result = generate_project(
+        user_content,
+        progress=_progress,
+        project_name_override=project_name_override,
+        architecture=req.architecture,
     )
 
-    # Ensure port is set even for non-API projects (where _inject_api_proxy is a no-op)
-    if "vite.config.ts" in files and f"port: {port}" not in files.get("vite.config.ts", ""):
-        files["vite.config.ts"] = _inject_vite_server(
-            files["vite.config.ts"], project_name, port
-        )
+    project_name = result["projectName"]
+    _write_meta(project_name, req.figma_url, req.prompt, title=result.get("title", project_name),
+                has_app=True, instructions=instructions)
 
-    # ── Write files ────────────────────────────────────────────────────────────
-    _progress("write")
-    _progress(f"llm_codegen:💾 Writing {n_files} files to disk…")
-    kill_server(project_name)
-    _write_files(project_dir, files)
-    (project_dir / "screenshots").mkdir(exist_ok=True)
-
-    # ── npm install (shared node_modules — fast junction) ─────────────────────
-    _progress("install")
-    from agents.uigen_agent import (
-        _ensure_shared_nm_once, _link_shared_nm, _get_project_deps,
-    )
-    ok_shared, _ = _ensure_shared_nm_once()
-    if ok_shared:
-        _progress("llm_codegen:Linking shared packages…")
-        project_deps = _get_project_deps(project_dir)
-        def _pkg_progress(msg: str):
-            _progress(f"llm_codegen:{msg}")
-        ok, npm_log = _link_shared_nm(project_dir, project_deps, progress=_pkg_progress)
-        if not ok:
-            ok, npm_log = _npm_install(project_dir)
-    else:
-        _progress("llm_codegen:Running npm install…")
-        ok, npm_log = _npm_install(project_dir)
-    if not ok:
-        raise RuntimeError(f"npm install failed:\n{npm_log[-2000:]}")
-
-    # ── Start API server (if present) then Vite dev server ─────────────────────
-    _progress("start")
-    if has_api_files and api_port:
-        from agents.uigen_agent import _start_api_server, _api_servers
-        import time as _time2
-        _progress(f"llm_codegen:Starting API server on port {api_port}…")
-        api_proc = _start_api_server(project_dir, api_port=api_port)
-        if api_proc:
-            _api_servers[project_name] = api_proc
-            _time2.sleep(2)
-
-    _progress(f"llm_codegen:Starting Vite dev server on port {port}…")
-    proc = _start_vite(project_dir, port)
-    _dev_servers[project_name] = proc
-
-    if not wait_for_port(port, timeout=60):
-        raise RuntimeError("Vite dev server did not start in time")
-
-    # ── QA sign-off ───────────────────────────────────────────────────────────
-    _progress("qa")
-    _progress("llm_codegen:🔍 Running QA checks…")
-    from agents.qa_agent import run_qa
-    qa_report = run_qa(project_name, port, project_dir)
-    _progress(f"llm_codegen:QA {'passed ✅' if qa_report.passed else 'flagged issues ⚠️'} — score {qa_report.score}/100")
-
-    title = data.get("title", project_name)
-    _write_meta(project_name, req.figma_url, req.prompt, title=title, has_app=True,
-                instructions=instructions)
+    # Save architecture as draft for future reference
+    if result.get("architecture"):
+        from agents.draft_preview import format_draft_markdown
+        arch = result["architecture"]
+        draft_data = {
+            "architecture": arch,
+            "markdown": format_draft_markdown(arch, req.prompt),
+            "projectName": project_name,
+            "title": result.get("title", project_name),
+            "pageCount": len(arch.get("pages", [])),
+        }
+        _save_draft_to_disk(project_name, draft_data)
 
     # ── Token usage summary ───────────────────────────────────────────────────
     _elapsed = _time.time() - _t0
@@ -463,16 +418,8 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
     _append_buildlog(project_name, _progress_logs.get(request_id, []),
                      event="Generated from prompt", duration_s=_elapsed)
     _progress("ready")
-    return {
-        "projectName": project_name,
-        "title":       title,
-        "description": data.get("description", ""),
-        "port":        port,
-        "url":         "/app/" + project_name + "/",
-        "files":       list(files.keys()),
-        "type":        "react",
-        "qa":          qa_report.to_dict(),
-    }
+    result["type"] = "react"
+    return result
 
 
 def _validate_json_files(files: dict, prompt: str, instructions: str, _progress) -> dict:
@@ -890,6 +837,50 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
 
         _progress("llm_codegen:Generating updated files…")
 
+        # ── Page-preservation logic for refine path ─────────────────────────────
+        # Detect existing page files and determine which should be protected
+        import re as _re_pages
+        _existing_page_files: set[str] = set()
+        for _fp in existing:
+            if _fp.startswith("src/pages/") and _fp.endswith(".tsx"):
+                _existing_page_files.add(_fp)
+
+        # Detect "keep existing pages" intent
+        _prompt_and_instr = (prompt + " " + instructions_trimmed).lower()
+        _KEEP_PHRASES = [
+            "keep all existing pages", "keep existing pages",
+            "do not modify existing pages", "don't modify existing pages",
+            "do not change existing pages", "don't change existing pages",
+            "leave existing pages", "existing pages unchanged",
+            "do not update existing pages", "don't update existing pages",
+            "keep all existing pages and data unchanged",
+        ]
+        _keep_existing = any(ph in _prompt_and_instr for ph in _KEEP_PHRASES)
+
+        def _page_explicitly_mentioned(page_path: str) -> bool:
+            """Check if a page file is explicitly mentioned in the prompt/instructions."""
+            name = page_path.replace("src/pages/", "").replace(".tsx", "")
+            name_lower = name.lower()
+            name_spaced = _re_pages.sub(r'([a-z])([A-Z])', r'\1 \2', name).lower()
+            for variant in set([name_lower, name_spaced]):
+                if _re_pages.search(r'\b' + _re_pages.escape(variant) + r'\b', _prompt_and_instr):
+                    return True
+            return False
+
+        def _filter_preserved_pages(file_list: list[str]) -> list[str]:
+            """Remove existing page files that should be preserved from the change list."""
+            filtered = []
+            for f in file_list:
+                if f in _existing_page_files:
+                    if _keep_existing:
+                        _progress(f"llm_codegen:⊘ Preserving {f} (keep-existing-pages)")
+                        continue
+                    if not _page_explicitly_mentioned(f):
+                        _progress(f"llm_codegen:⊘ Preserving {f} (not mentioned in prompt)")
+                        continue
+                filtered.append(f)
+            return filtered
+
         # ── Two-pass fallback: if single-shot fails, first identify which files
         # need to change, then generate each one individually ─────────────────
         def _two_pass_refine() -> dict:
@@ -905,6 +896,7 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
                 f"Available files:\n" + "\n".join(f"  - {p}" for p in existing) + "\n\n"
                 "Based on the refinement request and instructions above, list ONLY the file paths "
                 "that need to be created or modified. Include new files that don't exist yet. "
+                "Do NOT include existing page files that the user did not ask to change. "
                 "Return JSON: {\"files\": [\"path1\", \"path2\", ...]}"
             )
             id_data = chat_json(
@@ -916,23 +908,25 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
             to_change = id_data.get("files", [])
             if not to_change:
                 raise RuntimeError("Two-pass: model returned no files to change")
+            # Filter out preserved pages BEFORE expensive generation
+            to_change = _filter_preserved_pages(to_change)
+            if not to_change:
+                raise RuntimeError("Two-pass: all identified files are preserved — nothing to generate")
             _progress(f"llm_codegen:Two-pass — generating {len(to_change)} file(s)…")
 
-            # Pass 2: for each identified file, generate it with its own focused context
+            # Pass 2: generate each file in PARALLEL (I/O-bound LLM calls)
             result_files: dict[str, str] = {}
-            # Trim instructions to 5k chars for two-pass — enough to capture full specs
             _instr2 = instructions_trimmed[:5_000] + ("…[trimmed]" if len(instructions_trimmed) > 5_000 else "")
-            for target_path in to_change:
+
+            def _gen_one_file(target_path: str) -> tuple[str, str]:
                 _progress(f"llm_codegen:Two-pass — generating: {target_path}")
-                # Minimal context: only the target file itself + types + App.tsx (for routing)
                 _fc2 = ""
                 _fc2_budget = 25_000
-                # The target file itself is always included in full (it's what we're rewriting)
                 if target_path in existing:
                     _target_content = existing[target_path][:40_000]
                     _fc2 += f"\n// FILE: {target_path}\n{_target_content}\n"
-                # Add minimal structural context
-                _structural = ["src/types.ts", "src/App.tsx"]
+                _schema_key = "api/schema.sql" if "api/schema.sql" in existing else "schema.sql"
+                _structural = [_schema_key, "src/types.ts", "src/App.tsx"]
                 for _ep in _structural:
                     if _ep in existing and _ep != target_path:
                         _snippet = existing[_ep][:8_000]
@@ -950,7 +944,6 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
                     f"Return JSON: {{\"files\": {{\"{target_path}\": \"<complete file content>\"}}}}"
                 )
 
-                # Try chat_json first; on truncation, fall back to raw text mode
                 try:
                     gen_data = chat_json(
                         messages=[{"role": "user", "content": gen_user}],
@@ -959,11 +952,10 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
                         temperature=0.1,
                     )
                     for k, v in gen_data.get("files", {}).items():
-                        result_files[k] = v
+                        return k, v
                 except RuntimeError as _e2:
                     if "truncated" not in str(_e2).lower():
                         raise
-                    # Fallback: ask for raw file content without JSON wrapping
                     _progress(f"llm_codegen:Two-pass — {target_path} too large for JSON, using raw mode…")
                     raw_user = (
                         f"Existing file:\n{existing.get(target_path, '')[:40_000]}\n\n"
@@ -981,11 +973,23 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
                         max_tokens=64000,
                         temperature=0.1,
                     )
-                    # Strip markdown fences if model added them
                     if raw_content.startswith("```"):
                         lines = raw_content.splitlines()
                         raw_content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-                    result_files[target_path] = raw_content.strip()
+                    return target_path, raw_content.strip()
+                return target_path, ""
+
+            from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _as_completed
+            with _TPE(max_workers=min(4, len(to_change))) as pool:
+                futures = {pool.submit(_gen_one_file, tp): tp for tp in to_change}
+                for fut in _as_completed(futures):
+                    try:
+                        k, v = fut.result()
+                        if k and v:
+                            result_files[k] = v
+                            _progress(f"llm_codegen:✓ {k} generated ({len(v):,} chars)")
+                    except Exception as _fe:
+                        _progress(f"llm_codegen:⚠️ {futures[fut]} failed: {_fe}")
 
             if not result_files:
                 raise RuntimeError("Two-pass: no files were generated")
@@ -1009,15 +1013,19 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
         if not updated_files:
             raise RuntimeError("Claude returned no files")
 
+        # Filter out preserved pages from single-pass result too
+        _allowed_pages = set(_filter_preserved_pages(list(updated_files.keys())))
+        for _fp_check in list(updated_files.keys()):
+            if _fp_check in _existing_page_files and _fp_check not in _allowed_pages:
+                del updated_files[_fp_check]
+
         # Merge: keep all existing files, overlay only what Claude changed
         files = {**existing, **updated_files}
 
         # ── Validate JSON data files — regenerate any that are empty or invalid ──
         files = _validate_json_files(files, prompt, instructions_trimmed, _progress)
 
-        # Fix common LLM mistakes — centralized character sanitization first
-        from agents.sanitize_js import sanitize_files as _sanitize_files
-        files = _sanitize_files(files)
+        # Fix common LLM mistakes — local fixers first, then full postprocessor suite
         files = _fix_json_named_imports(files)
         files = _fix_data_index(files)
         files = _fix_main_tsx(files, project_name)
@@ -1028,26 +1036,14 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
         from agents.uigen_agent import (
             _dev_ports, _dev_servers, _save_ports, _next_port,
             _write_files, wait_for_port, kill_server, _start_vite,
-            _patch_vite_for_ds, _patch_dynamic_imports, _patch_map_components, _patch_index_html,
-            _fix_badge_variants, _fix_prop_contracts, _fix_chart_container, _fix_self_wrapping_charts,
             _ensure_shared_nm_once, _link_shared_nm,
-            _get_project_deps, _npm_install,
+            _get_project_deps, _npm_install, _scan_imports_from_files,
             _bundle_api_server, _ensure_schema_sql, _api_ports, _next_api_port,
         )
-        files = _patch_vite_for_ds(files)
-        files = _patch_dynamic_imports(files)
-        files = _patch_map_components(files)
-        files = _fix_badge_variants(files)
-        files = _fix_prop_contracts(files)
-        files = _fix_chart_container(files)
-        files = _fix_self_wrapping_charts(files)
-        files = _patch_index_html(files)
 
         # ── API-first: ensure schema exists, bundle API server ────────────────
         files = _ensure_schema_sql(files)
         files = _bundle_api_server(files)
-        from agents.postprocessors import _strip_data_imports, _inject_api_proxy
-        files = _strip_data_imports(files)
 
         port = _dev_ports.get(project_name) or _next_port()
         _dev_ports[project_name] = port
@@ -1069,13 +1065,13 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
             import re as _re_env
             files["api/.env"] = _re_env.sub(r"API_PORT=\d+", f"API_PORT={api_port}", files["api/.env"])
 
-        # Inject API proxy + server block into vite config (handles port, base, proxy)
-        if has_api_files and api_port and "vite.config.ts" in files:
-            files = _inject_api_proxy(files, project_name=project_name, port=port, api_port=api_port)
-        elif "vite.config.ts" in files and "server:" not in files["vite.config.ts"]:
-            files["vite.config.ts"] = _inject_vite_server(
-                files["vite.config.ts"], project_name, port
-            )
+        # Run the FULL postprocessor suite (includes table name validation,
+        # vite config injection, DS aliasing, badge fixes, etc.)
+        from agents.postprocessors import run_all_postprocessors
+        files = run_all_postprocessors(
+            files, project_dir=project_dir, project_name=project_name,
+            port=port, api_port=api_port or 0,
+        )
 
         _progress("write")
         kill_server(project_name)
@@ -1086,6 +1082,11 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
         ok_shared, _ = _ensure_shared_nm_once()
         if ok_shared:
             project_deps = _get_project_deps(project_dir)
+            # Scan actual source imports to catch packages the LLM uses but didn't declare
+            scanned_imports = _scan_imports_from_files(project_dir)
+            for pkg in scanned_imports:
+                if pkg not in project_deps:
+                    project_deps[pkg] = "latest"
             def _pkg_progress(msg: str):
                 _progress(f"llm_codegen:{msg}")
             ok, npm_log = _link_shared_nm(project_dir, project_deps, progress=_pkg_progress)
@@ -1151,9 +1152,15 @@ async def api_refine(project_name: str, req: RefineRequest):
     _latest_request_id = request_id
     loop = asyncio.get_event_loop()
     try:
-        result = await loop.run_in_executor(
-            _executor, _run_refine, project_name, req.prompt, request_id, req.comment, req.instructions
-        )
+        if req.architecture:
+            # Pre-approved draft → use the multi-agent pipeline with selective regeneration
+            result = await loop.run_in_executor(
+                _executor, _run_refine_with_architecture, project_name, req, request_id
+            )
+        else:
+            result = await loop.run_in_executor(
+                _executor, _run_refine, project_name, req.prompt, request_id, req.comment, req.instructions
+            )
         result["requestId"] = request_id
         return result
     except Exception as e:
@@ -1166,6 +1173,57 @@ async def api_refine(project_name: str, req: RefineRequest):
             await asyncio.sleep(60)
             _progress_logs.pop(request_id, None)
         asyncio.create_task(_cleanup())
+
+
+def _run_refine_with_architecture(project_name: str, req: RefineRequest, request_id: str) -> dict:
+    """Refine using the multi-agent pipeline with pre-approved architecture (selective page regen)."""
+    import time as _time
+    _t0 = _time.time()
+
+    import token_tracker
+    token_tracker.reset(request_id)
+    token_tracker.set_run_id(request_id)
+
+    def _progress(msg: str):
+        if request_id:
+            from datetime import datetime as _dt
+            elapsed = _time.time() - _t0
+            ts = _dt.now().strftime("%H:%M:%S")
+            stamped = f"[{ts} +{elapsed:.1f}s] {msg}"
+            _progress_logs.setdefault(request_id, []).append(stamped)
+
+    from agents.uigen_agent import generate_project
+
+    instructions = (req.instructions or "").strip()
+    user_content = req.prompt
+    if instructions:
+        user_content = f"{req.prompt}\n\n## Detailed Instructions\n\n{instructions}"
+
+    result = generate_project(
+        user_content,
+        progress=_progress,
+        project_name_override=project_name,
+        architecture=req.architecture,
+    )
+
+    _progress("ready")
+    _append_history(project_name, "Refined (pipeline)", detail=req.prompt[:200],
+                    prompt=req.prompt, comment=req.comment or "", instructions=instructions)
+
+    # Save architecture as draft for reference
+    if result.get("architecture"):
+        from agents.draft_preview import format_draft_markdown
+        arch = result["architecture"]
+        draft_data = {
+            "architecture": arch,
+            "markdown": format_draft_markdown(arch, req.prompt),
+            "projectName": project_name,
+            "title": result.get("title", project_name),
+            "pageCount": len(arch.get("pages", [])),
+        }
+        _save_draft_to_disk(project_name, draft_data)
+
+    return result
 
 
 @app.get("/api/projects/{project_name}/history")
@@ -2678,9 +2736,10 @@ def _safe_proxy_url(base_url: str, path: str, qs: str) -> str:
 
 
 def _resolve_vite_port(project_name: str) -> int | None:
-    """Get the current Vite dev port for a project, preferring the on-disk file over stale memory."""
-    from agents.uigen_agent import _dev_ports, _PORTS_FILE
+    """Get the current Vite dev port for a project, only if it's actually listening."""
+    from agents.uigen_agent import _dev_ports, _dev_servers, _PORTS_FILE
     import json as _json
+    import socket as _socket
     port = _dev_ports.get(project_name)
     try:
         disk_ports = _json.loads(_PORTS_FILE.read_text())
@@ -2696,7 +2755,37 @@ def _resolve_vite_port(project_name: str) -> int | None:
             port = disk_port
     except Exception:
         pass
+    if not port:
+        return None
+    # Quick check: is anything actually listening on that port?
+    if project_name not in _dev_servers:
+        try:
+            with _socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                return port
+        except (OSError, ConnectionRefusedError):
+            return None
     return port
+
+
+_auto_start_in_progress: set = set()
+
+async def _auto_start_project(project_name: str) -> int | None:
+    """Try to auto-start a project's Vite server. Returns the port or None."""
+    if project_name in _auto_start_in_progress:
+        return None
+    _auto_start_in_progress.add(project_name)
+    try:
+        from agents.uigen_agent import GENERATED_DIR
+        project_dir = GENERATED_DIR / project_name
+        if not project_dir.exists():
+            return None
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(_executor, _dispatch_start, project_name)
+        return result.get("port") if isinstance(result, dict) else None
+    except Exception:
+        return None
+    finally:
+        _auto_start_in_progress.discard(project_name)
 
 
 @app.api_route("/app/{project_name}/{path:path}", methods=["GET","POST","PUT","DELETE","OPTIONS","HEAD"])
@@ -2706,7 +2795,10 @@ async def proxy_vite(project_name: str, path: str, request: Request):
     import urllib.error as _uerr
     port = _resolve_vite_port(project_name)
     if not port:
-        raise HTTPException(503, "Project not running")
+        # Auto-start the project if it has a registered port but process isn't running
+        port = await _auto_start_project(project_name)
+        if not port:
+            raise HTTPException(503, "Project not running")
     # Vite is configured with base='/app/{name}/' so all its assets live under that prefix
     base_url = "http://127.0.0.1:" + str(port) + "/app/" + project_name + "/"
     target = _safe_proxy_url(base_url, path, str(request.query_params))
@@ -2726,6 +2818,25 @@ async def proxy_vite(project_name: str, path: str, request: Request):
                             headers=headers, media_type=resp.headers.get("content-type"))
     except _uerr.HTTPError as e:
         return Response(content=e.read(), status_code=e.code)
+    except (_uerr.URLError, OSError) as e:
+        # Connection refused — Vite server died. Try to auto-start once.
+        port = await _auto_start_project(project_name)
+        if not port:
+            raise HTTPException(502, "Proxy error: " + str(e))
+        # Retry the request after auto-start
+        base_url = "http://127.0.0.1:" + str(port) + "/app/" + project_name + "/"
+        target = _safe_proxy_url(base_url, path, str(request.query_params))
+        try:
+            http_req = _ureq.Request(target, data=body or None,
+                                      method=request.method, headers=fwd_headers)
+            with _ureq.urlopen(http_req, timeout=proxy_timeout) as resp:
+                content = resp.read()
+                headers = {k: v for k, v in resp.headers.items()
+                           if k.lower() not in ("transfer-encoding", "connection", "keep-alive")}
+                return Response(content=content, status_code=resp.status,
+                                headers=headers, media_type=resp.headers.get("content-type"))
+        except Exception as e2:
+            raise HTTPException(502, "Proxy error after auto-start: " + str(e2))
     except Exception as e:
         raise HTTPException(502, "Proxy error: " + str(e))
 

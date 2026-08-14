@@ -13,6 +13,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import React from 'react'
 import * as d3 from 'd3'
 import { config } from '../config/WorldMap.config'
+import { ExportToolbar } from '../components/ExportToolbar'
 
 const _API = (import.meta as any).env?.BASE_URL?.replace(/\/$/, '') || ''
 
@@ -419,9 +420,17 @@ export default function WorldMapPage() {
 
       {top10.length > 0 && (
         <div style={s.card}>
-          <h3 style={{ margin: '0 0 14px', fontSize: 14, fontWeight: 700, color: '#374151' }}>
-            Top {top10.length} — {valueField}
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#374151' }}>
+              Top {top10.length} — {valueField}
+            </h3>
+            <ExportToolbar
+              data={top10.map((r: any, i: number) => ({ '#': i + 1, 'Country / Region': r.name, [valueField]: r.val }))}
+              columns={[{ key: '#', header: '#' }, { key: 'Country / Region', header: 'Country / Region' }, { key: valueField, header: valueField }]}
+              title={(config as any).title ?? 'Map Data'}
+              filename="map-data"
+            />
+          </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' as const }}>
             <thead>
               <tr>

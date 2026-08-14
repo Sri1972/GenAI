@@ -39,91 +39,6 @@ import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import project_url as _project_url, WEB_APPS_DIR, FIGMA_MOCKUPS_DIR
 
-# ── Brand tokens for CSS variable injection ────────────────────────────────────
-_sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-try:
-    from config_ds import DS_TOKENS_FILE as _DS_TOKENS_FILE
-    import json as _json
-    _TOKENS: dict = _json.loads(_DS_TOKENS_FILE.read_text(encoding="utf-8")) if _DS_TOKENS_FILE.exists() else {}
-except Exception:
-    _TOKENS = {}
-
-def _brand_css_section() -> str:
-    """Return a CSS variable + style guide section derived from brand_tokens.json."""
-    if not _TOKENS:
-        return ""
-    u  = _TOKENS.get("usage", {})
-    c  = _TOKENS.get("colors", {})
-    sp = _TOKENS.get("spacing", {})
-    r  = _TOKENS.get("radius", {})
-    co = _TOKENS.get("components", {})
-    ty = _TOKENS.get("typography", {})
-    sem = c.get("semantic", {})
-    brand = _TOKENS.get("brand", "Mobility Global")
-
-    return f"""
-
-## Mobility Global Brand Tokens — apply to css/styles.css
-This is the {brand} design system. Apply these tokens so the generated app
-matches the brand. Add the following :root block at the TOP of css/styles.css:
-
-```css
-:root {{
-  /* Page */
-  --bg:           {u.get('page_background','#EFEFE5')};
-  --header-bg:    {u.get('header_background','#FFFFFF')};
-  --sidebar-bg:   {u.get('sidebar_background','#FFFFFF')};
-  --card-bg:      {u.get('card_background','#FFFFFF')};
-  /* Text */
-  --text:         {u.get('primary_text','#132445')};
-  --text-2:       {u.get('secondary_text','#374151')};
-  --text-muted:   {u.get('muted_text','#9CA3AF')};
-  /* Brand */
-  --blue:         {u.get('primary_button','#0064D2')};
-  --blue-mist:    {u.get('hover_bg','#B8EAF5')};
-  --nav-active-bg:{u.get('active_nav_bg','#EBF3FF')};
-  --brand-dark:   {u.get('brand_dark','#132445')};
-  /* Borders */
-  --border:       {u.get('border','#E5E7EB')};
-  /* Semantic */
-  --success:      {sem.get('success','#059669')};
-  --success-bg:   {sem.get('success_bg','#D1FAE5')};
-  --warning:      {sem.get('warning','#D97706')};
-  --warning-bg:   {sem.get('warning_bg','#FDEBB3')};
-  --error:        {sem.get('error','#DC2626')};
-  --error-bg:     {sem.get('error_bg','#FEE2E2')};
-  /* Sizes */
-  --header-h:     {co.get('header_height',64)}px;
-  --sidebar-w:    {co.get('sidebar_width',240)}px;
-  --radius-sm:    {r.get('sm',4)}px;
-  --radius-md:    {r.get('md',8)}px;
-  --radius-lg:    {r.get('lg',12)}px;
-}}
-
-body {{
-  font-family: '{ty.get('heading_font','Inter')}', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  margin: 0;
-}}
-```
-
-Use these CSS variables throughout css/styles.css and inline styles.
-For example:
-  - Page/body background:  background: var(--bg)
-  - Cards:                 background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg)
-  - Sidebar:               background: var(--sidebar-bg); width: var(--sidebar-w)
-  - Header:                background: var(--header-bg); height: var(--header-h)
-  - Primary buttons:       background: var(--blue); color: #fff; border-radius: var(--radius-md)
-  - Active nav items:      background: var(--nav-active-bg); color: var(--blue)
-  - Status badges (green): background: var(--success-bg); color: var(--success)
-  - Status badges (amber): background: var(--warning-bg); color: var(--warning)
-  - Status badges (red):   background: var(--error-bg);   color: var(--error)
-
-Typography sizes (use in CSS font-size):
-  H1: {ty.get('sizes',{}).get('h1',32)}px  H2: {ty.get('sizes',{}).get('h2',24)}px  H3: {ty.get('sizes',{}).get('h3',20)}px
-  Body: {ty.get('sizes',{}).get('body',14)}px  Caption: {ty.get('sizes',{}).get('caption',11)}px
-"""
 
 FIGMA_TOKEN = os.environ.get("FIGMA_ACCESS_TOKEN", "")
 MODEL_ID    = os.environ.get("LITELLM_SONNET_46_MODEL", "claude-sonnet-4-6")
@@ -794,288 +709,9 @@ def take_screenshots_playwright(url: str, print_fn=print, output_dir: Path | Non
     return screenshots, file_name
 
 
-# ── Step 4: Generate web app via Claude ───────────────────────────────────────
-
-WEBAPP_SYSTEM_PROMPT = """You are an expert frontend developer. You are given:
-  1. Screenshots of EVERY SCREEN from a Figma wireframe (mobile OR desktop)
-  2. The EXACT prototype wiring — which element navigates where
-  3. The screen dimensions are provided in the prompt — use them to determine layout
-
-╔══════════════════════════════════════════════════════════════════╗
-║  HARD RULES — non-negotiable, enforced by post-processor         ║
-╠══════════════════════════════════════════════════════════════════╣
-║  DATA  : NEVER create data/app.json.                             ║
-║          Create ONE file per entity: data/inventory.json,        ║
-║          data/oems.json, data/sales.json, data/forecast.json …   ║
-║          Each file is a JSON ARRAY of records (8-15 rows).       ║
-║                                                                  ║
-║  API   : ALL data access through js/api.js (IIFE module).        ║
-║          app.js NEVER calls fetch() directly.                    ║
-║          One function per entity, supports q/filter params.      ║
-║                                                                  ║
-║  CHARTS: D3.js v7 ONLY. ZERO Chart.js. ZERO <canvas> elements.  ║
-║          All chart code in js/charts.js.                         ║
-║          Load order: D3 CDN → charts.js → api.js → app.js       ║
-║                                                                  ║
-║  JS    : NEVER put <script> or </script> inside .js files.       ║
-╚══════════════════════════════════════════════════════════════════╝
-
-Your job: build a complete, fully interactive web app served as a single HTML file
-with separate CSS/JS. It must work correctly when opened in a browser via HTTP server.
-
-## Output format — STRICT multi-file
-Output files separated by === path === markers:
-
-TITLE: <app title>
-PROJECT: <kebab-case-name>
----
-=== index.html ===
-=== css/styles.css ===
-=== js/router.js ===
-=== js/api.js ===
-=== js/charts.js ===
-=== js/app.js ===
-=== data/<entity1>.json ===
-=== data/<entity2>.json ===
-
-## Data rules — SEPARATE FILES PER ENTITY
-NEVER put all data in a single app.json. Create one JSON file per entity:
-- data/inventory.json   → array of vehicle/product/item records
-- data/oems.json        → array of manufacturer/OEM records
-- data/sales.json       → array of monthly/quarterly sales records
-- data/forecast.json    → array of forecast/projection records
-Each file contains a JSON ARRAY (not an object) of records. Use 8-15 rows of realistic data.
-
-## API stub rules — js/api.js
-Create an IIFE module with one function per data entity:
-```javascript
-const AppNameAPI = (function () {
-  const _store = {};
-  function _load(file) {
-    const key = file.replace('data/','').replace('.json','');
-    if (_store[key]) return Promise.resolve(_store[key]);
-    return fetch(file).then(r=>r.json()).then(d=>{ _store[key]=d; return d; });
-  }
-  function _delay(v,ms){ return new Promise(r=>setTimeout(()=>r(v),ms||100)); }
-  function getInventory(params) {
-    return _load('data/inventory.json').then(rows=>{
-      let r=rows.slice();
-      const q=((params||{}).q||'').trim().toLowerCase();
-      if(q) r=r.filter(v=>JSON.stringify(v).toLowerCase().includes(q));
-      return _delay(r);
-    });
-  }
-  return { getInventory };
-})();
-```
-Replace names and add one function per entity. Never call fetch() in app.js directly.
-
-## Chart rules — D3.js ONLY
-ALL charts in js/charts.js using D3.js v7. Chart containers are <div> not <canvas>.
-Load D3 before charts.js: <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-CRITICAL: Charts MUST be rendered via the _onPageShow hook (see router.js pattern below),
-NOT inside DOMContentLoaded. Hidden sections have clientWidth===0, charts will be invisible.
-
-### MANDATORY — every chart MUST have hover tooltips
-Add a shared tooltip div at the top of charts.js and reuse it across all charts:
-```javascript
-var _tip = (function(){
-  var el = document.createElement('div');
-  el.style.cssText = 'position:fixed;background:rgba(15,20,40,0.92);color:#fff;padding:7px 13px;'
-    + 'border-radius:6px;font-size:13px;pointer-events:none;opacity:0;transition:opacity .15s;z-index:9999;';
-  document.body.appendChild(el);
-  return {
-    show: function(html, event){ el.innerHTML=html; el.style.opacity=1; _tip.move(event); },
-    move: function(event){ el.style.left=(event.clientX+14)+'px'; el.style.top=(event.clientY-36)+'px'; },
-    hide: function(){ el.style.opacity=0; }
-  };
-})();
-```
-Every bar, line dot, pie/donut slice MUST call _tip.show(...), _tip.move(...), _tip.hide():
-```javascript
-  .on('mouseover', function(event, d){ _tip.show('<b>'+d.month+'</b><br>'+d.units+' units', event); })
-  .on('mousemove', function(event){ _tip.move(event); })
-  .on('mouseout',  function(){ _tip.hide(); })
-```
-
-In app.js, register a page-show handler and render charts only when that page becomes visible:
-```javascript
-window._onPageShow = function(pageId) {
-  if (pageId === 'sales-overview') {
-    AppNameAPI.getSales().then(function(d){ renderBarChart('sales-chart', d, {xKey:'month',yKey:'units'}); });
-  }
-  if (pageId === 'forecast') {
-    AppNameAPI.getForecast().then(function(d){ renderLineChart('forecast-chart', d, {xKey:'month',yKey:'value'}); });
-  }
-};
-```
-Container: <div id="chart-id" style="position:relative;width:100%;height:220px;"></div>
-Tables and non-chart data (no width dependency) can still load at DOMContentLoaded.
-
-## CRITICAL — router.js MUST be exactly this pattern:
-```javascript
-function showPage(id) {
-  document.querySelectorAll('.screen').forEach(function(s){ s.style.display = 'none'; });
-  var el = document.getElementById(id);
-  if (el) el.style.display = 'flex';
-  if (window._onPageShow) window._onPageShow(id);
-}
-document.addEventListener('DOMContentLoaded', function() {
-  showPage('<first-screen-id>');
-});
-```
-
-## CRITICAL — css/styles.css MUST hide all screens by default:
-```css
-.screen { display: none; flex-direction: column; }
-```
-NEVER use Tailwind's `hidden` class for screen visibility — only use inline style via showPage().
-
-## CRITICAL — index.html screen structure:
-- EVERY screen section must have BOTH class="screen" AND the id:
-  <section id="dashboard" class="screen"> ... </section>
-- DO NOT add any other display/visibility classes to screen sections
-- Script tags at bottom of body, in order: router.js THEN charts.js THEN api.js THEN app.js
-
-## Layout — detect from frame dimensions provided in the prompt:
-
-### DESKTOP layout (frame width >= 1000px):
-- Full-width responsive layout filling the browser window
-- No phone shell wrapper
-- Use the full viewport width
-- CSS: body { margin: 0; } .screen { display: none; flex-direction: column; min-height: 100vh; }
-
-### MOBILE layout (frame width < 1000px, e.g. 390px):
-- Wrap in a phone shell centered on desktop:
-```css
-body { background:#0a0f14; display:flex; justify-content:center; padding:24px 0; min-height:100vh; }
-.phone-shell { width:390px; min-height:844px; background:<app-bg-color>; border-radius:40px;
-               box-shadow:0 0 0 10px #1a1a2e,0 30px 80px rgba(0,0,0,0.8); overflow:hidden; position:relative; }
-.screen { display:none; flex-direction:column; min-height:844px; }
-```
-
-## Navigation rules — CRITICAL
-- Screen IDs must be kebab-case of Figma frame name: "Match Detail" → "match-detail"
-- showPage() call uses the screen id: showPage('match-detail')
-- Wire EVERY link in the prototype wiring — add onclick="showPage('...')" to the element
-- For nav tabs: the currently active screen's tab gets a highlighted style
-- For OVERLAY links: create a hidden div with position:absolute, toggle display on click
-
-## Technical rules
-- Tailwind CSS via CDN for utility classes (https://cdn.tailwindcss.com)
-- D3.js v7 via CDN (https://cdn.jsdelivr.net/npm/d3@7) — NO Chart.js, NO <canvas>
-- ALL JS in js/ files — NO inline <script> in HTML
-- ALL custom CSS in css/styles.css — NO inline <style> in HTML
-- ALL data in data/*.json — NO hardcoded arrays in JS files
-- Bottom nav: use position:absolute bottom:0 left:0 right:0 inside .phone-shell
-
-## Visual fidelity rules
-- Extract EXACT hex colors from screenshots — declare as CSS custom properties
-- Match nav bar layout, tab labels, active/inactive states exactly
-- Match card layouts, list items, header heights, spacing from screenshots
-- Implement every interactive element shown: search, filters, dropdowns, buttons
-- Use realistic domain-appropriate dummy data in data/*.json
-- NEVER output prose — only the === file === blocks""" + _brand_css_section()
-
-
-
-def generate_webapp(
-    screenshots: list[dict],
-    file_name: str,
-    prompt: str = "",
-    wiring: dict = None,
-    all_links: list = None,
-) -> dict:
-    """
-    Send screenshots + exact prototype wiring to Claude via LiteLLM.
-    Returns {title, project_name, files: {path: content}}.
-    """
-    from agents.llm import _get_client
-
-    client = _get_client()
-
-    # ── Detect layout type from frame dimensions ──────────────────────────────
-    # width=0 means the Figma API didn't return dimensions (e.g. Playwright path) — default desktop
-    frame_width = screenshots[0].get("width", 0) if screenshots else 0
-    is_desktop = (frame_width == 0) or (frame_width >= 1000)
-    layout_hint = (
-        f"LAYOUT: {'DESKTOP' if is_desktop else 'MOBILE'} "
-        f"(Figma frame width={frame_width}px{' — unknown, defaulting to desktop' if frame_width == 0 else ''}). "
-        + ("Use full-width desktop layout — NO phone shell wrapper." if is_desktop
-           else "Use mobile phone shell (390px centered).")
-    )
-
-    print(f"  Layout: {'DESKTOP' if is_desktop else 'MOBILE'} (frame width={frame_width}px)")
-
-    # ── Build user message ────────────────────────────────────────────────────
-    screen_list = "\n".join(f"  {s['index']}. {s['name']}" for s in screenshots)
-    wiring_text = format_wiring_for_prompt(wiring or {}, all_links or [])
-
-    intro = (
-        f'Figma design: "{file_name}"\n'
-        f"{layout_hint}\n\n"
-        f"{len(screenshots)} screens to implement:\n{screen_list}\n\n"
-        f"{wiring_text}\n"
-    )
-    if prompt.strip():
-        intro += f"\nAdditional instructions: {prompt}\n"
-    intro += (
-        "\nThe screenshots follow — one per screen in order. "
-        "Match the visual design exactly and implement all wiring above."
-    )
-
-    content: list[dict] = [{"type": "text", "text": intro}]
-    for s in screenshots:
-        content.append({"type": "text", "text": f"\n--- Screen {s['index']}: {s['name']} ---"})
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{s['base64_data']}"},
-        })
-
-    print(f"\n  Sending {len(screenshots)} screenshots + wiring map to Claude…")
-    total_links = sum(len(v) for v in (wiring or {}).values())
-    print(f"  Wiring: {total_links} prototype link(s) extracted from Figma")
-
-    # Use streaming to avoid gateway timeout — keeps connection alive
-    from agents.llm import _get_current_run_id, _record_usage
-    stream = client.chat.completions.create(
-        model=MODEL_ID,
-        max_tokens=64000,
-        timeout=600,
-        stream=True,
-        stream_options={"include_usage": True},
-        messages=[
-            {"role": "system", "content": WEBAPP_SYSTEM_PROMPT},
-            {"role": "user", "content": content},
-        ],
-    )
-    chunks = []
-    usage_data = None
-    for chunk in stream:
-        delta = chunk.choices[0].delta if chunk.choices else None
-        if delta and delta.content:
-            chunks.append(delta.content)
-        if hasattr(chunk, "usage") and chunk.usage:
-            usage_data = chunk.usage
-
-    # Record token usage
-    if usage_data:
-        _record_usage(
-            _get_current_run_id(),
-            getattr(usage_data, "prompt_tokens", 0),
-            getattr(usage_data, "completion_tokens", 0),
-        )
-    else:
-        est_output = sum(len(c) for c in chunks) // 4
-        _record_usage(_get_current_run_id(), 0, est_output)
-
-    text = "".join(chunks)
-
-    title, proj_slug, files = _parse_multifile(text)
-    return {"title": title, "project_name": proj_slug, "files": files, "raw": text}
-
 
 def _parse_multifile(response: str) -> tuple[str, str, dict[str, str]]:
+    """Parse === path === delimited LLM response into files dict. Legacy — used by HTML refine path."""
     text  = response.strip()
     title = "App"
     slug_name = ""
@@ -1360,36 +996,96 @@ function renderDonutChart(containerId, data, opts) {
     return files
 
 
-# ── Step 5: Write files ────────────────────────────────────────────────────────
 
-def write_project(project_name: str, files: dict[str, str]) -> Path:
-    """Write generated files to TurboUIGen/generated/."""
-    output_base = GENERATED_DIR
-    output_base.mkdir(parents=True, exist_ok=True)
+# ── Figma → Requirements extraction ───────────────────────────────────────────
 
-    safe_name  = re.sub(r"[^a-z0-9-]", "-", project_name.lower()).strip("-") or "app"
-    project_dir = output_base / safe_name
-    project_dir.mkdir(parents=True, exist_ok=True)
+_FIGMA_REQUIREMENTS_SYSTEM = """\
+You are an expert UI/UX analyst. You are given screenshots of a Figma wireframe/prototype \
+along with its navigation wiring. Your job is to produce a DETAILED requirements document \
+that another AI agent will use to build a fully functional React web application.
 
-    from agents.uigen_agent import _repair_json
-    from agents.sanitize_js import sanitize
-    for rel_path, content in files.items():
-        fp = project_dir / rel_path
-        fp.parent.mkdir(parents=True, exist_ok=True)
-        if isinstance(content, list):
-            content = "\n".join(
-                item.get("text", "") if isinstance(item, dict) else str(item)
-                for item in content
-            )
-        if not content or not content.strip():
-            continue
-        if rel_path.endswith(".json"):
-            content = _repair_json(content, rel_path)
-        content = sanitize(content, rel_path)
-        fp.write_text(content, encoding="utf-8")
-        print(f"  Wrote: {safe_name}/{rel_path}")
+Output a structured requirements document in markdown format with these sections:
 
-    return project_dir
+## App Overview
+- App name, theme, accent color (infer from the design)
+
+## Data Model
+For each data entity visible in the wireframes (tables, lists, cards, charts):
+- Table name (snake_case)
+- Columns with types (text, numeric, categorical, date)
+- Seed row count (15-50 depending on complexity)
+- Seed notes (what realistic data to include)
+
+## Pages
+For EACH screen in the wireframe:
+- Page name (PascalCase)
+- Sidebar label
+- Detailed description of what the page shows:
+  - Layout structure (cards, grids, charts, tables, forms)
+  - What data it displays and from which tables
+  - Filters, search, interactions
+  - Chart types (bar, line, donut, etc.) with what data they show
+
+## Behavior Notes
+- Navigation patterns
+- Interactions between pages
+- Any special behaviors visible in the wireframe
+
+Be EXHAUSTIVE. The more detail you provide, the better the generated app will match the wireframe.
+Use snake_case for all database column names. Derive everything from what you SEE in the screenshots.
+"""
+
+
+def _figma_to_requirements(
+    screenshots: list[dict],
+    file_name: str,
+    user_prompt: str = "",
+    wiring: dict = None,
+    all_links: list = None,
+) -> str:
+    """
+    Use LLM vision to convert Figma screenshots + wiring into a structured
+    requirements document suitable for the main React generation pipeline.
+    """
+    from agents.llm import chat
+
+    # Build the wiring context
+    wiring_text = format_wiring_for_prompt(wiring or {}, all_links or [])
+
+    # Detect layout
+    frame_width = screenshots[0].get("width", 0) if screenshots else 0
+    is_desktop = (frame_width == 0) or (frame_width >= 1000)
+    layout_hint = f"Layout: {'DESKTOP' if is_desktop else 'MOBILE'} (frame width={frame_width}px)"
+
+    # Build screen list
+    screen_list = "\n".join(f"  {s['index']}. {s['name']}" for s in screenshots)
+
+    intro = (
+        f'Figma design: "{file_name}"\n'
+        f"{layout_hint}\n\n"
+        f"{len(screenshots)} screens to implement:\n{screen_list}\n\n"
+        f"{wiring_text}\n"
+    )
+    if user_prompt.strip():
+        intro += f"\nAdditional requirements from user: {user_prompt}\n"
+    intro += (
+        "\nAnalyze the following screenshots and produce a detailed requirements document. "
+        "Match the visual design — describe every UI element, chart, table, card, and interaction you see."
+    )
+
+    # Build vision message with all screenshots
+    content: list[dict] = [{"type": "text", "text": intro}]
+    for s in screenshots:
+        content.append({"type": "text", "text": f"\n--- Screen {s['index']}: {s['name']} ---"})
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{s['base64_data']}"},
+        })
+
+    messages = [{"role": "user", "content": content}]
+    requirements = chat(messages, system=_FIGMA_REQUIREMENTS_SYSTEM, max_tokens=16000)
+
+    return requirements.strip()
 
 
 # ── Main pipeline ──────────────────────────────────────────────────────────────
@@ -1533,41 +1229,64 @@ def run(
     else:
         _emit(f"  Wiring: inferred by Claude from screenshots")
 
-    # ── Generate web app ──────────────────────────────────────────────────────
-    _emit(f"\n  Sending design to Claude for web app generation…")
-    result = generate_webapp(screenshots, file_name, prompt, wiring, all_links)
+    # ── Convert Figma screenshots → structured requirements → React app ─────
+    _emit(f"\n  Analyzing Figma design to extract requirements…")
 
-    if not result["files"].get("index.html"):
-        raise RuntimeError(
-            f"Claude did not return a valid index.html. "
-            f"Response started: {result['raw'][:300]}"
-        )
+    # Step 1: Use LLM vision to convert screenshots + wiring into a requirements document
+    requirements_prompt = _figma_to_requirements(screenshots, file_name, prompt, wiring, all_links)
+    _emit(f"  Requirements extracted ({len(requirements_prompt)} chars)")
 
-    _emit(f"\n  Generated {len(result['files'])} files for '{result['title']}'")
-
-    # 6. Write files — user's project name always wins over LLM-generated slug
+    # Step 2: Delegate to the main React/SQLite pipeline
+    _emit(f"\n  Generating React app via main pipeline…")
     final_name = (
         re.sub(r"[^a-z0-9-]", "-", project_name_override.lower()).strip("-")
         if project_name_override
-        else result["project_name"]
+        else slug(file_name)
     )
-    project_dir = write_project(final_name, result["files"])
-    # Always create screenshots folder inside project dir
+
+    from agents.uigen_agent import generate_project
+    result = generate_project(
+        prompt=requirements_prompt,
+        progress=progress_callback,
+        project_name_override=final_name,
+    )
+
+    # Copy screenshots into the project directory for reference
+    project_dir = Path(GENERATED_DIR) / final_name
     (project_dir / "screenshots").mkdir(exist_ok=True)
-    _emit(f"\n  Project written to: {project_dir}")
+    import shutil, time as _t
+    for s in screenshots:
+        src = Path(s.get("local_path", ""))
+        if src.exists():
+            dst = project_dir / "screenshots" / src.name
+            for _attempt in range(3):
+                try:
+                    shutil.copy2(src, dst)
+                    break
+                except PermissionError:
+                    if _attempt < 2:
+                        _t.sleep(1)
+                    else:
+                        # Last resort: read bytes manually (avoids metadata copy lock)
+                        try:
+                            dst.write_bytes(src.read_bytes())
+                        except Exception:
+                            pass
 
     _emit(f"\n{'='*60}")
     _emit(f"  Done!")
-    _emit(f"  Project:     {final_name}")
-    _emit(f"  Files:       {', '.join(result['files'].keys())}")
-    _emit(f"  Screenshots: {SCREENSHOTS_DIR}")
+    _emit(f"  Project:     {result['projectName']}")
+    _emit(f"  Port:        {result.get('port', 'N/A')}")
+    _emit(f"  URL:         {result.get('url', 'N/A')}")
     _emit(f"{'='*60}\n")
 
     return {
-        "project_name": final_name,
-        "title":        result["title"],
+        "project_name": result["projectName"],
+        "title":        result.get("title", final_name),
         "project_dir":  str(project_dir),
-        "files":        list(result["files"].keys()),
+        "files":        result.get("files", []),
+        "port":         result.get("port"),
+        "url":          result.get("url"),
         "screenshots":  [s["local_path"] for s in screenshots],
     }
 

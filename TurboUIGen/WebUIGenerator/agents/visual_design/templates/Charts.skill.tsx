@@ -62,46 +62,63 @@ function pivotData(raw: any[], cfg: any): any[] {
   const cols = Object.keys(firstRow)
   const fieldNames = series.map((s: any) => s.field as string)
   const slugify = (s: string) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+
+  // Strategy 1: find a column whose values match the series field names directly
+  // e.g. series fields = ['Tesla','Toyota','BMW'] and column 'make' has those values
   let pivotCol: string | null = null
   let metricCol: string | null = null
   for (const col of cols) {
     if (col === xKey || col === 'id') continue
-    const colVals = [...new Set(raw.map(r => slugify(String(r[col]))))]
-    for (const metric of cols) {
-      if (metric === col || metric === xKey || metric === 'id') continue
-      if (typeof firstRow[metric] !== 'number' && isNaN(Number(firstRow[metric]))) continue
-      const expectedFields = colVals.map(v => `${v}_${metric}`)
-      const matchCount = fieldNames.filter(f => expectedFields.includes(f)).length
-      if (matchCount >= series.length * 0.4) { pivotCol = col; metricCol = metric; break }
+    const colVals = [...new Set(raw.map(r => String(r[col])))]
+    const directMatchCount = fieldNames.filter(f => colVals.includes(f)).length
+    if (directMatchCount >= series.length * 0.6) {
+      pivotCol = col
+      // Find the best numeric metric column (prefer one named in cfg.valueField or cfg.pivotField hints)
+      const hintMetric = cfg.valueField ?? cfg.aggregateValue
+      if (hintMetric && cols.includes(hintMetric) && typeof raw[0][hintMetric] === 'number') {
+        metricCol = hintMetric
+      } else {
+        for (const m of cols) {
+          if (m === col || m === xKey || m === 'id') continue
+          if (typeof firstRow[m] === 'number' || !isNaN(Number(firstRow[m]))) { metricCol = m; break }
+        }
+      }
+      break
     }
-    if (pivotCol) break
   }
+
+  // Strategy 2: slugified match with suffix (e.g. field='tesla_units' matches col value='Tesla')
+  if (!pivotCol || !metricCol) {
+    for (const col of cols) {
+      if (col === xKey || col === 'id') continue
+      const colVals = [...new Set(raw.map(r => slugify(String(r[col]))))]
+      for (const metric of cols) {
+        if (metric === col || metric === xKey || metric === 'id') continue
+        if (typeof firstRow[metric] !== 'number' && isNaN(Number(firstRow[metric]))) continue
+        const expectedFields = colVals.map(v => `${v}_${metric}`)
+        const matchCount = fieldNames.filter(f => expectedFields.includes(f)).length
+        if (matchCount >= series.length * 0.4) { pivotCol = col; metricCol = metric; break }
+      }
+      if (pivotCol) break
+    }
+  }
+
   if (!pivotCol || !metricCol) return raw
-  const catValues = [...new Set(raw.map(r => String(r[pivotCol!])))]
-  const aliasMap = new Map<string, string>()
-  for (const cat of catValues) {
-    const slug = slugify(cat)
-    const canonical = `${slug}_${metricCol}`
-    aliasMap.set(canonical, canonical)
-    for (const f of fieldNames) {
-      if (aliasMap.has(f)) continue
-      const prefix = f.replace(new RegExp(`_${metricCol}$`), '')
-      if (prefix && slug.startsWith(prefix)) aliasMap.set(f, canonical)
-      else if (prefix && slug.includes(prefix)) aliasMap.set(f, canonical)
-    }
-  }
+
+  // Build pivoted rows: one row per xKey value, one field per category
   const grouped = new Map<string, any>()
   for (const row of raw) {
     const key = String(row[xKey])
     if (!grouped.has(key)) grouped.set(key, { [xKey]: row[xKey] })
     const rec = grouped.get(key)!
-    const catVal = slugify(String(row[pivotCol!]))
-    const canonical = `${catVal}_${metricCol}`
+    const catVal = String(row[pivotCol!])
     const numVal = Number(row[metricCol!] ?? 0)
-    rec[canonical] = (rec[canonical] ?? 0) + numVal
-    for (const [alias, target] of aliasMap) {
-      if (target === canonical && alias !== canonical) rec[alias] = rec[canonical]
-    }
+    // Store under the original category value (matching series field names directly)
+    rec[catVal] = (rec[catVal] ?? 0) + numVal
+    // Also store under slugified version for legacy compatibility
+    const slugCat = slugify(catVal)
+    rec[slugCat] = rec[catVal]
+    rec[`${slugCat}_${metricCol}`] = rec[catVal]
   }
   return [...grouped.values()]
 }
@@ -1283,9 +1300,18 @@ export default function ChartsPage() {
                 </button>
               ))}
             </div>
-            {/* Active panel */}
+            {/* Active panel — supports nested charts[] within a tab */}
             {((charts ?? []) as any[])[activeTab] && (
-              <ChartPanel cfg={((charts ?? []) as any[])[activeTab]} />
+              ((charts ?? []) as any[])[activeTab].charts
+                ? <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    {(((charts ?? []) as any[])[activeTab].charts as any[]).map((sub: any, si: number) => (
+                      <div key={si}>
+                        {sub.title && <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#374151' }}>{sub.title}</h3>}
+                        <ChartPanel cfg={sub} />
+                      </div>
+                    ))}
+                  </div>
+                : <ChartPanel cfg={((charts ?? []) as any[])[activeTab]} />
             )}
           </div>
         ) : (

@@ -78,3 +78,4 @@ Trend analysis in two tabs.
 - All data is local — no external API calls
 - All charts resize responsively
 - App looks polished at 1440px desktop width
+- **Export buttons**: Every page that displays a data table (Global Map summary table, North America state table) must include "Excel ↓" and "PDF ↓" export buttons in a toolbar above the table. These export the currently-displayed (filtered) data.

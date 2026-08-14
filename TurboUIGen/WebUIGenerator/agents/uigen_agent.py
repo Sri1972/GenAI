@@ -14,8 +14,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .llm import chat, chat_json, model_id as _llm_model_id
-from .prompts import SYSTEM_PROMPT, PASS1_SYSTEM_PROMPT, PASS2_SYSTEM_PROMPT, PASS3_SYSTEM_PROMPT, DS_ROOT
+from .llm import chat, model_id as _llm_model_id
+from .prompts import DS_ROOT
 from .qa_agent import run_qa
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")  # TurboUIGen/.env
@@ -165,7 +165,6 @@ def wait_for_port(port: int, timeout: int = 60) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            # Any HTTP response (even 404) means Vite is up and handling requests
             _ur.urlopen(f"http://127.0.0.1:{port}/", timeout=2)
             return True
         except _ue.HTTPError:
@@ -175,7 +174,36 @@ def wait_for_port(port: int, timeout: int = 60) -> bool:
     return False
 
 
+def _wait_for_api(port: int, timeout: int = 15) -> bool:
+    """Wait until the Python API server responds to /health."""
+    import urllib.request as _ur
+    import urllib.error as _ue
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            _ur.urlopen(f"http://127.0.0.1:{port}/health", timeout=2)
+            return True
+        except _ue.HTTPError:
+            return True
+        except Exception:
+            time.sleep(0.5)
+    print(f"[_wait_for_api] WARNING: API server on port {port} not ready after {timeout}s", flush=True)
+    return False
+
+
+_NPM_STRIP_FROM_PKG = {"mobility-global-ds", "@mobility-global/ds"}
+
+
 def _npm_install(project_dir: Path) -> tuple[bool, str]:
+    # Strip packages that are resolved via vite alias (not on npm)
+    pj = project_dir / "package.json"
+    if pj.exists():
+        import re as _re
+        txt = pj.read_text(encoding="utf-8")
+        for pkg in _NPM_STRIP_FROM_PKG:
+            txt = _re.sub(r',?\s*"' + _re.escape(pkg) + r'"\s*:\s*"[^"]*"', '', txt)
+        pj.write_text(txt, encoding="utf-8")
+
     env = os.environ.copy()
     env["PATH"] = NODE_PATH + ";" + env.get("PATH", "")
     node_exe = Path(NODE_PATH) / "node.exe"
@@ -245,6 +273,7 @@ _SHARED_PACKAGE_JSON = {
         "recharts": "^2.12.2",
         "lucide-react": "^0.378.0",
         "d3": "^7.9.0",
+        "d3-sankey": "^0.12.3",
         "topojson-client": "^3.1.0",
         "us-atlas": "^3.0.1",
         "world-atlas": "^2.0.2",
@@ -256,6 +285,7 @@ _SHARED_PACKAGE_JSON = {
         "@types/react": "^18.2.79",
         "@types/react-dom": "^18.2.25",
         "@types/d3": "^7.4.3",
+        "@types/d3-sankey": "^0.12.5",
         "@types/topojson-client": "^3.1.5",
         "@types/leaflet": "^1.9.14",
         "vite": "^5.2.8",
@@ -337,10 +367,17 @@ def _link_shared_nm(
     nm_link   = project_dir / "node_modules"
 
     # Install any missing packages into the shared store FIRST (before touching the link)
+    # Packages that don't exist on npm — the LLM hallucinates these
+    _BLOCKED_PACKAGES = {
+        "@types/us-atlas", "@types/world-atlas", "@types/topojson",
+        "@types/topojson-specification", "@types/geojson-vt",
+        "mobility-global-ds", "@mobility-global/ds",
+    }
+
     def _nm_exists(pkg: str) -> bool:
         parts = pkg.split("/")
         return nm_target.joinpath(*parts).exists() if pkg.startswith("@") else (nm_target / pkg).exists()
-    missing = [p for p in project_deps if not _nm_exists(p)]
+    missing = [p for p in project_deps if not _nm_exists(p) and p not in _BLOCKED_PACKAGES]
 
     if missing:
         if progress:
@@ -418,6 +455,55 @@ def _get_project_deps(project_dir: Path) -> dict:
         return {}
 
 
+def _scan_imports_from_files(project_dir: Path) -> set[str]:
+    """
+    Scan all .ts/.tsx source files for actual import statements (static and dynamic)
+    and return the set of third-party package names referenced.
+
+    This catches packages the LLM uses in code but forgot to add to package.json —
+    a common failure mode that causes runtime 'module not found' errors.
+    """
+    # Matches: import X from 'pkg', import { X } from 'pkg', import 'pkg'
+    _static_import = re.compile(r"""(?:import|export)\s+.*?from\s+['"]([^./][^'"]*?)['"]""")
+    # Matches: await import('pkg'), import('pkg')
+    _dynamic_import = re.compile(r"""import\s*\(\s*['"]([^./][^'"]*?)['"]""")
+    # Matches: require('pkg')
+    _require = re.compile(r"""require\s*\(\s*['"]([^./][^'"]*?)['"]""")
+
+    packages: set[str] = set()
+
+    # Built-in/virtual modules to skip
+    _BUILTINS = {"react", "react-dom", "react-dom/client", "react-router-dom",
+                 "vite", "@vitejs/plugin-react", "typescript",
+                 "mobility-global-ds", "tailwindcss", "postcss", "autoprefixer"}
+
+    for fpath in project_dir.rglob("*"):
+        if fpath.suffix not in (".ts", ".tsx", ".js", ".jsx"):
+            continue
+        if "node_modules" in fpath.parts:
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        for pat in (_static_import, _dynamic_import, _require):
+            for m in pat.finditer(content):
+                raw = m.group(1)
+                # Extract package name: 'd3-sankey' from 'd3-sankey/src/foo'
+                # Scoped: '@tanstack/react-table' from '@tanstack/react-table/core'
+                if raw.startswith("@"):
+                    parts = raw.split("/")
+                    pkg = "/".join(parts[:2]) if len(parts) >= 2 else raw
+                else:
+                    pkg = raw.split("/")[0]
+                packages.add(pkg)
+
+    # Remove builtins and packages already known to be handled by aliases
+    packages -= _BUILTINS
+    return packages
+
+
 # Ensure shared deps are installed at import time (runs once in background on first use)
 _shared_nm_ready: bool = False
 
@@ -425,7 +511,17 @@ _shared_nm_ready: bool = False
 def _ensure_shared_nm_once() -> tuple[bool, str]:
     global _shared_nm_ready
     if _shared_nm_ready:
-        return True, "ready"
+        # Even if ready, verify extra packages exist (catches partial installs)
+        nm = SHARED_NM_DIR / "node_modules"
+        def _pkg_dir(p: str) -> Path:
+            parts = p.split("/")
+            return nm.joinpath(*parts) if p.startswith("@") else nm / p
+        missing = [p for p in _EXTRA_PACKAGES if not _pkg_dir(p).exists()]
+        if missing:
+            print(f"[_ensure_shared_nm_once] Missing packages detected: {missing}", flush=True)
+            _shared_nm_ready = False
+        else:
+            return True, "ready"
     ok, log = _ensure_shared_nm()
     if ok:
         _shared_nm_ready = True
@@ -564,8 +660,103 @@ from agents.postprocessors import (
 )
 
 
+# ── Boilerplate safety net ────────────────────────────────────────────────────
+
+def _ensure_boilerplate(files: dict, project_name: str) -> dict:
+    """Ensure essential boilerplate files exist. Generates from templates if missing."""
+    if "index.html" not in files:
+        title = project_name.replace("-", " ").title()
+        files["index.html"] = (
+            '<!DOCTYPE html>\n<html lang="en">\n  <head>\n'
+            '    <meta charset="UTF-8" />\n'
+            '    <link rel="icon" type="image/svg+xml" href="./vite.svg" />\n'
+            '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n'
+            f'    <title>{title}</title>\n'
+            '    <link rel="preconnect" href="https://fonts.googleapis.com" />\n'
+            '    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n'
+            '    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />\n'
+            '  </head>\n  <body>\n    <div id="root"></div>\n'
+            '    <script type="module" src="/src/main.tsx"></script>\n'
+            '  </body>\n</html>\n'
+        )
+        print(f"[boilerplate] Generated missing index.html", flush=True)
+
+    if "package.json" not in files:
+        files["package.json"] = (
+            '{\n  "name": "' + project_name + '",\n'
+            '  "private": true,\n  "version": "0.1.0",\n  "type": "module",\n'
+            '  "scripts": {\n    "dev": "vite",\n    "build": "tsc && vite build",\n    "preview": "vite preview"\n  },\n'
+            '  "dependencies": {\n'
+            '    "react": "^18.2.0",\n    "react-dom": "^18.2.0",\n'
+            '    "react-router-dom": "^6.22.0",\n    "lucide-react": "^0.344.0",\n'
+            '    "d3": "^7.9.0"\n  },\n'
+            '  "devDependencies": {\n'
+            '    "typescript": "^5.3.3",\n    "@types/react": "^18.2.56",\n'
+            '    "@types/react-dom": "^18.2.19",\n    "@types/d3": "^7.4.3",\n'
+            '    "vite": "^5.1.4",\n    "@vitejs/plugin-react": "^4.2.1",\n'
+            '    "tailwindcss": "^3.4.1",\n    "postcss": "^8.4.35",\n'
+            '    "autoprefixer": "^10.4.18"\n  }\n}\n'
+        )
+        print(f"[boilerplate] Generated missing package.json", flush=True)
+
+    if "tsconfig.json" not in files:
+        files["tsconfig.json"] = (
+            '{\n  "compilerOptions": {\n    "target": "ES2020",\n    "useDefineForClassFields": true,\n'
+            '    "lib": ["ES2020", "DOM", "DOM.Iterable"],\n    "module": "ESNext",\n'
+            '    "skipLibCheck": true,\n    "moduleResolution": "bundler",\n'
+            '    "allowImportingTsExtensions": true,\n    "resolveJsonModule": true,\n'
+            '    "isolatedModules": true,\n    "noEmit": true,\n    "jsx": "react-jsx",\n'
+            '    "strict": true,\n    "noUnusedLocals": false,\n    "noUnusedParameters": false,\n'
+            '    "noFallthroughCasesInSwitch": true,\n    "types": ["vite/client"]\n'
+            '  },\n  "include": ["src"]\n}\n'
+        )
+        print(f"[boilerplate] Generated missing tsconfig.json", flush=True)
+
+    if "postcss.config.js" not in files:
+        files["postcss.config.js"] = "export default {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {}\n  }\n}\n"
+        print(f"[boilerplate] Generated missing postcss.config.js", flush=True)
+
+    if "tailwind.config.js" not in files:
+        files["tailwind.config.js"] = (
+            "/** @type {import('tailwindcss').Config} */\nexport default {\n"
+            "  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],\n"
+            "  theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } },\n"
+            "  plugins: []\n}\n"
+        )
+        print(f"[boilerplate] Generated missing tailwind.config.js", flush=True)
+
+    if "src/main.tsx" not in files:
+        files["src/main.tsx"] = (
+            "import React from 'react'\n"
+            "import ReactDOM from 'react-dom/client'\n"
+            "import { BrowserRouter } from 'react-router-dom'\n"
+            "import App from './App'\n"
+            "import './index.css'\n\n"
+            "const BASE = import.meta.env.BASE_URL.replace(/\\/$/, '') || ''\n\n"
+            "ReactDOM.createRoot(document.getElementById('root')!).render(\n"
+            "  <React.StrictMode>\n"
+            "    <BrowserRouter basename={BASE} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>\n"
+            "      <App />\n"
+            "    </BrowserRouter>\n"
+            "  </React.StrictMode>\n)\n"
+        )
+        print(f"[boilerplate] Generated missing src/main.tsx", flush=True)
+
+    if "src/index.css" not in files:
+        files["src/index.css"] = (
+            "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n"
+            "* { box-sizing: border-box; }\n\n"
+            "body {\n  margin: 0;\n  padding: 0;\n"
+            "  font-family: 'Inter', sans-serif;\n"
+            "  background-color: #F1F5F9;\n  color: #1E293B;\n}\n"
+        )
+        print(f"[boilerplate] Generated missing src/index.css", flush=True)
+
+    return files
+
+
 # ── API Server bundling ───────────────────────────────────────────────────────
-_SKILLS_DIR = Path(__file__).parent / "skills"
+_SKILLS_DIR = Path(__file__).parent / "services_engineer" / "templates"
 
 def _bundle_api_server(files: dict) -> dict:
     """If schema.sql is present, bundle API server into api/ subfolder + useApi hook."""
@@ -592,6 +783,11 @@ def _bundle_api_server(files: dict) -> dict:
     hook_template = _SKILLS_DIR / "useApi.hook.ts"
     if hook_template.exists():
         files["src/hooks/useApi.ts"] = hook_template.read_text(encoding="utf-8")
+
+    # 3. Bundle ExportToolbar shared component
+    export_toolbar = _SKILLS_DIR / "ExportToolbar.component.tsx"
+    if export_toolbar.exists():
+        files["src/components/ExportToolbar.tsx"] = export_toolbar.read_text(encoding="utf-8")
 
     # 3. Fill and bundle .env into api/
     env_template = _SKILLS_DIR / "app_server_env_template.txt"
@@ -798,7 +994,7 @@ def _repair_json(content: str, rel_path: str) -> str:
     return content
 
 
-_PRESERVE_FILES = {".history.json", ".buildlog.json", ".meta.json", ".docker.json", "screenshots", "docker"}
+_PRESERVE_FILES = {".history.json", ".buildlog.json", ".meta.json", ".docker.json", "screenshots", "docker", "app.db"}
 
 def _write_files(project_dir: Path, files: dict):
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -1105,8 +1301,12 @@ def _tsc_heal(project_dir: Path, files: dict, progress=None) -> dict:
                 content = _repair_json(content, rel_path)
             fp.write_text(content, encoding="utf-8")
 
-        # Run tsc
-        tsc_bin = project_dir / "node_modules" / ".bin" / "tsc"
+        # Run tsc — on Windows use .cmd wrapper
+        import platform as _platform
+        if _platform.system() == "Windows":
+            tsc_bin = project_dir / "node_modules" / ".bin" / "tsc.cmd"
+        else:
+            tsc_bin = project_dir / "node_modules" / ".bin" / "tsc"
         if not tsc_bin.exists():
             print("[tsc_heal] tsc not found — skipping", flush=True)
             return files
@@ -1117,6 +1317,7 @@ def _tsc_heal(project_dir: Path, files: dict, progress=None) -> dict:
             capture_output=True,
             text=True,
             timeout=60,
+            shell=(_platform.system() == "Windows"),
         )
         if result.returncode == 0:
             print(f"[tsc_heal] Clean after round {round_n}", flush=True)
@@ -1176,386 +1377,150 @@ def _tsc_heal(project_dir: Path, files: dict, progress=None) -> dict:
     return files
 
 
-def _call_llm(messages: list, progress=None) -> dict:
+def _qa_heal(project_dir: Path, project_name: str, port: int,
+             qa_report, files: dict, progress=None, max_rounds: int = 2):
     """
-    Generate app files. Tries single-shot first (fast path).
-    Falls back to two-pass (skeleton → pages) if the response is truncated.
+    Feed QA errors back to LLM for targeted fixes. Re-runs QA after each round.
+    Returns (final_qa_report, fixed_files).
     """
-    system = ""
-    user_messages = []
-    for m in messages:
-        if m["role"] == "system":
-            system = m["content"] if isinstance(m["content"], str) else ""
-        else:
-            user_messages.append(m)
-
-    # ── Multi-pass generation (always) ───────────────────────────────────────
-    # Skills fire in Pass 3: pages matching a skill trigger get a config-only
-    # LLM call instead of a full 300-line page generation. Always using multi-
-    # pass ensures skills are always consulted — single-shot bypassed them.
-    # Pass 1 (~20k tokens): infrastructure — config, types, data, App.tsx, utils
-    # Pass 2 (~25k tokens): shared components — charts, maps, reusable components
-    # Pass 3 (~10k each):   one LLM call per page (or config-only for skill pages)
     import re as _re
 
-    user_prompt = user_messages[-1]["content"] if user_messages else ""
-
-    # ── Pass 1: infrastructure ────────────────────────────────────────────────
-    if progress:
-        progress("llm_codegen:Large app detected — multi-pass mode. Pass 1/3: infrastructure…")
-    print("[_call_llm] multi-pass: Pass 1 — infrastructure", flush=True)
-
-    from agents.skills.registry import skill_summary as _skill_summary
-    pass1_system = PASS1_SYSTEM_PROMPT + "\n\n" + _skill_summary()
-
-    try:
-        pass1_data = chat_json(
-            user_messages,
-            system=pass1_system,
-            max_tokens=32000,
-            temperature=0.1,
-        )
-    except RuntimeError as _pass1_err:
-        if "truncated" in str(_pass1_err).lower():
-            print(f"[_call_llm] Pass 1 truncated — retrying with seed limit instruction", flush=True)
-            if progress:
-                progress("llm_codegen:Pass 1 response too large, retrying with constraints…")
-            _seed_limit = "\n\nIMPORTANT: Keep seed.sql BRIEF — max 3 short rows per table for now. Full seeding happens separately."
-            pass1_data = chat_json(
-                user_messages,
-                system=pass1_system + _seed_limit,
-                max_tokens=32000,
-                temperature=0.1,
-            )
-        else:
-            raise
-
-    merged_files: dict = dict(pass1_data.get("files", {}))
-    pages: list[str] = pass1_data.get("pages", [])
-    shared_components: list[str] = pass1_data.get("sharedComponents", [])
-
-    # Fallback: extract page names from App.tsx imports if not in response
-    if not pages:
-        app_src = merged_files.get("src/App.tsx", "")
-        pages = _re.findall(r"['\"]\.\/pages\/(\w+)['\"]", app_src)
-
-    # Fallback: infer shared components from App.tsx or types.ts mentions
-    if not shared_components:
-        all_src = " ".join(merged_files.values())
-        for name in ("SalesMap", "WorldSalesMap", "D3BarChart", "D3LineChart",
-                     "D3DonutChart", "D3InlineChart"):
-            if name in all_src:
-                shared_components.append(name)
-
-    print(
-        f"[_call_llm] Pass 1 done: {len(merged_files)} files, "
-        f"pages={pages}, components={shared_components}",
-        flush=True,
+    QA_HEAL_SYSTEM = (
+        "You are fixing runtime errors in a React/TypeScript page. "
+        "The errors were detected by automated QA (browser console errors, missing imports, NaN values). "
+        "Fix ONLY the specific errors listed. Do not rewrite unrelated code.\n\n"
+        "OUTPUT FORMAT: Your response must be ONLY the complete .tsx file content starting with 'import'. "
+        "Do NOT include any explanation, analysis, commentary, or prose. "
+        "Do NOT start with 'Looking at', 'The issue is', 'Here is', 'I need to', or similar. "
+        "The FIRST character of your response MUST be the letter 'i' in 'import'.\n\n"
+        "CRITICAL RULES:\n"
+        "- useApi syntax: useApi<any[]>('table_name') — pass ONLY the SQL table name\n"
+        "- API returns SNAKE_CASE fields matching SQL: row.doc_type NOT row.docType\n"
+        "- DO NOT import from '../components/...' unless it's ExportToolbar\n"
+        "- D3: use two separate useEffects — one for ResizeObserver (empty deps []), one for drawing ([data, dims])\n"
+        "- NEVER draw D3 inside ResizeObserver callback\n"
+        "- Null-guard all numeric values: Number(x) || 0\n"
     )
 
-    # ── Safety net: ensure schema.sql exists after Pass 1 ─────────────────────
-    # The PASS1_SYSTEM_PROMPT always asks for schema.sql + seed.sql because all
-    # apps use the API-first architecture. If the LLM omitted them, generate now
-    # so Pass 3 pages have a schema to reference and _bundle_api_server fires.
-    if "schema.sql" not in merged_files and "api/schema.sql" not in merged_files:
-        print("[_call_llm] Pass 1 missing schema.sql — running _ensure_schema_sql safety net", flush=True)
-        merged_files = _ensure_schema_sql(merged_files, force=True)
+    for round_n in range(max_rounds):
+        # Group errors by page file
+        errors_by_page: dict[str, list[str]] = {}
+        for finding in qa_report.findings:
+            if finding.severity != "error":
+                continue
+            # Map route to page file
+            route = finding.file  # e.g. "/timesheets" or "src/pages/Capacity.tsx"
+            if route.startswith("/"):
+                # Convert route like "/timesheets" to page file
+                page_name = route.strip("/").replace("-", "").title()
+                # Try to find matching page file
+                for fpath in files:
+                    if fpath.startswith("src/pages/") and fpath.endswith(".tsx"):
+                        fname = fpath.replace("src/pages/", "").replace(".tsx", "")
+                        if fname.lower() == page_name.lower() or fname.lower() == route.strip("/").lower():
+                            page_name = fname
+                            break
+                page_file = f"src/pages/{page_name}.tsx"
+            elif route.startswith("src/"):
+                # Strip line number suffix from tsc output (e.g. "src/pages/Foo.tsx:42")
+                page_file = route.split(":")[0]
+            else:
+                continue
 
-    # Build a compact context summary for later passes
-    # Cap each file at 1500 chars to keep context tight
-    def _context_summary(files: dict, cap: int = 2000) -> str:
-        priority = ("src/types.ts", "api/schema.sql", "api/seed.sql", "schema.sql", "seed.sql", "src/App.tsx", "src/data/index.ts")
-        ordered = [(k, v) for k, v in files.items() if k in priority]
-        ordered += [(k, v) for k, v in files.items()
-                    if k not in priority and k.startswith("src/data/")]
-        return "\n".join(
-            f"=== {path} ===\n{content[:cap]}{'…' if len(content) > cap else ''}"
-            for path, content in ordered
-        )
-
-    infra_context = _context_summary(merged_files)
-
-    # ── Pass 2: shared components ─────────────────────────────────────────────
-    if shared_components:
-        if progress:
-            progress(f"llm_codegen:Pass 2/3: shared components ({', '.join(shared_components)})…")
-        print(f"[_call_llm] multi-pass: Pass 2 — {len(shared_components)} shared components", flush=True)
-
-        pass2_prompt = (
-            f"Original app description:\n{user_prompt}\n\n"
-            f"Infrastructure already generated:\n{infra_context}\n\n"
-            f"Generate these shared components:\n"
-            + "\n".join(f"- src/components/{c}.tsx" for c in shared_components)
-        )
-
-        try:
-            pass2_data = chat_json(
-                [{"role": "user", "content": pass2_prompt}],
-                system=PASS2_SYSTEM_PROMPT,
-                max_tokens=32000,
-                temperature=0.1,
-            )
-            merged_files.update(pass2_data.get("files", {}))
-            print(
-                f"[_call_llm] Pass 2 done: +{len(pass2_data.get('files', {}))} component files",
-                flush=True,
-            )
-        except Exception as ce:
-            print(f"[_call_llm] Pass 2 failed: {ce} — generating stubs", flush=True)
-            for c in shared_components:
-                path = f"src/components/{c}.tsx"
-                if path not in merged_files:
-                    merged_files[path] = (
-                        f"export default function {c}(props: any) {{\n"
-                        f"  return <div>{{/* {c} — generation failed */}}</div>\n"
-                        f"}}\n"
-                    )
-    else:
-        print("[_call_llm] multi-pass: Pass 2 skipped (no shared components)", flush=True)
-
-    # Build an updated context summary that includes component signatures
-    comp_context = _context_summary(merged_files)
-
-    # ── Pass 3: pages in parallel (each page is independent of the others) ──────
-    total_pages = len(pages)
-    pages_to_gen = [p for p in pages if f"src/pages/{p}.tsx" not in merged_files]
-    already_done = total_pages - len(pages_to_gen)
-    if already_done:
-        print(f"[_call_llm] Pass 3: {already_done} page(s) already present, skipping", flush=True)
-
-    if pages_to_gen:
-        if progress:
-            progress(f"llm_codegen:Pass 3/3: generating {len(pages_to_gen)} page(s) in parallel…")
-        print(f"[_call_llm] multi-pass: Pass 3 — {len(pages_to_gen)} pages in parallel", flush=True)
-
-        def _gen_page(page_name: str) -> tuple[str, dict]:
-            page_path = f"src/pages/{page_name}.tsx"
-            result_files: dict[str, str] = {}
-
-            # ── Skill path: LLM generates only a small config file ──────────
-            from agents.skills.registry import (
-                get_skill, load_skill_template, load_config_template, get_config_schema,
-            )
-            skill = get_skill(page_name)
-            skill_tsx = load_skill_template(page_name) if skill else None
-
-            if skill and skill_tsx:
-                skill_key = skill["skill_key"]
-                print(f"[_gen_page] Skill match for '{page_name}' → {skill_key}", flush=True)
-                if progress:
-                    progress(f"skill:⚡ {page_name} → [{skill_key}] skill template matched — filling config…")
-                config_template = load_config_template(page_name) or ""
-                config_schema   = get_config_schema(page_name) or {}
-
-                # Ask LLM to fill in only the config — ~30 lines, not 300
-                import re as _re
-                _HAS_PLACEHOLDER = lambda s: bool(_re.search(r'\{\{[A-Z_]+\}\}', s))
-
-                config_prompt = (
-                    f"App description:\n{user_prompt}\n\n"
-                    f"Available database schema (tables) and types:\n{comp_context}\n\n"
-                    f"Fill in this config file for the '{page_name}' page.\n"
-                    f"The page uses the generic '{skill_key}' skill template.\n"
-                    f"IMPORTANT: Use table names and column names from schema.sql for tableName and field references.\n\n"
-                    f"Config schema:\n"
-                    + "\n".join(f"  {k}: {v}" for k, v in config_schema.items())
-                    + f"\n\nConfig template to fill in:\n{config_template}\n\n"
-                    f"Return JSON: {{\"files\": {{\"src/config/{page_name}.config.ts\": \"<filled config>\"}}}}\n"
-                    f"Rules:\n"
-                    f"- CRITICAL: Every {{{{PLACEHOLDER}}}} in the template MUST be replaced with a real value.\n"
-                    f"  Do NOT leave any {{{{...}}}} tokens in your output — they are template markers, not code.\n"
-                    f"- Use the actual data field names and values from the project data above.\n"
-                    f"- badgeColors variants: ONLY default|success|warning|error|info|accent\n"
-                    f"- Do NOT change the imports structure — only fill in values\n"
-                    f"- NEVER import from '../data' or '../../data' — those modules do not exist.\n"
-                    f"  For data binding use tableName: 'table_name_from_schema_sql'. Set dataExport: null.\n"
-                    f"- The config must be valid TypeScript with zero {{{{PLACEHOLDER}}}} tokens remaining"
+            if page_file in files:
+                errors_by_page.setdefault(page_file, []).append(
+                    f"  [{finding.category}] {finding.message}"
                 )
+
+        if not errors_by_page:
+            print(f"[qa_heal] No fixable page errors found — done", flush=True)
+            break
+
+        total_errors = sum(len(v) for v in errors_by_page.values())
+        print(f"[qa_heal] Round {round_n+1}/{max_rounds}: {total_errors} errors in {len(errors_by_page)} pages", flush=True)
+        if progress:
+            progress(f"crew:QA auto-fix round {round_n+1} — fixing {total_errors} errors in {len(errors_by_page)} pages…")
+
+        any_fixed = False
+        for page_file, error_lines in errors_by_page.items():
+            error_text = "\n".join(error_lines)
+            current_code = files.get(page_file, "")
+            if not current_code:
+                continue
+
+            # Read the schema for context
+            schema = ""
+            schema_path = project_dir / "api" / "schema.sql"
+            if not schema_path.exists():
+                schema_path = project_dir / "schema.sql"
+            if schema_path.exists():
                 try:
-                    cfg_data = chat_json(
-                        [{"role": "user", "content": config_prompt}],
-                        system=PASS3_SYSTEM_PROMPT,
-                        max_tokens=4000,
-                        temperature=0.1,
-                    )
-                    config_files = cfg_data.get("files", {})
-                except Exception as ce:
-                    print(f"[_gen_page] Config gen failed for {page_name}: {ce} — using blank config", flush=True)
-                    config_files = {}
+                    schema = schema_path.read_text(encoding="utf-8")[:3000]
+                except Exception:
+                    pass
 
-                config_key = f"src/config/{page_name}.config.ts"
-
-                # Retry once if the LLM returned the template verbatim with unfilled placeholders
-                if config_key in config_files and _HAS_PLACEHOLDER(config_files[config_key]):
-                    print(f"[_gen_page] Config for {page_name} still has {{{{PLACEHOLDER}}}} — retrying fill", flush=True)
-                    _unfilled = config_files[config_key]
-                    _retry_prompt = (
-                        f"The config file below still contains unfilled {{{{PLACEHOLDER}}}} tokens.\n"
-                        f"Replace EVERY {{{{PLACEHOLDER}}}} with real values using the project data.\n\n"
-                        f"App description:\n{user_prompt}\n\n"
-                        f"Available data exports:\n{comp_context}\n\n"
-                        f"Unfilled config:\n{_unfilled}\n\n"
-                        f"Return JSON: {{\"files\": {{\"src/config/{page_name}.config.ts\": \"<fully filled config>\"}}}}\n"
-                        f"IMPORTANT: The output must contain zero {{{{...}}}} tokens. Replace them ALL."
-                    )
-                    try:
-                        _retry_data = chat_json(
-                            [{"role": "user", "content": _retry_prompt}],
-                            system=PASS3_SYSTEM_PROMPT,
-                            max_tokens=4000,
-                            temperature=0.3,
-                        )
-                        _retry_files = _retry_data.get("files", {})
-                        if config_key in _retry_files and not _HAS_PLACEHOLDER(_retry_files[config_key]):
-                            config_files = _retry_files
-                            print(f"[_gen_page] Retry succeeded — placeholders filled for {page_name}", flush=True)
-                        else:
-                            print(f"[_gen_page] Retry still has placeholders for {page_name} — keeping best attempt", flush=True)
-                    except Exception as re_err:
-                        print(f"[_gen_page] Config retry failed for {page_name}: {re_err}", flush=True)
-
-                # Guard: if the LLM returned no config file (empty dict or key missing),
-                # fall back to the raw config template so the skill at least compiles.
-                if config_key not in config_files and config_template:
-                    print(f"[_gen_page] Config missing for {page_name} — writing template as fallback", flush=True)
-                    config_files[config_key] = config_template
-
-                skill_tsx_patched = _re.sub(
-                    r"from\s+'(\.\./config/)[^']+\.config'",
-                    f"from '../config/{page_name}.config'",
-                    skill_tsx,
-                )
-                result_files[page_path] = skill_tsx_patched
-                result_files.update(config_files)
-
-                # ── Bundle backend if skill has one ──────────────────────────
-                backend_meta = skill.get("backend")
-                if backend_meta:
-                    from agents.skills.registry import SKILLS_DIR as _SKILLS_DIR
-                    server_tpl = _SKILLS_DIR / backend_meta["server_template"]
-                    env_tpl    = _SKILLS_DIR / backend_meta["env_template"]
-                    if server_tpl.exists():
-                        result_files["api/app_server.py"] = server_tpl.read_text(encoding="utf-8")
-                    if env_tpl.exists():
-                        _env_content = env_tpl.read_text(encoding="utf-8")
-                        from dotenv import dotenv_values
-                        _parent_env = dotenv_values(Path(__file__).parent.parent.parent / ".env")
-                        _env_filled = _env_content
-                        _env_filled = _env_filled.replace("{{LITELLM_API_BASE}}", _parent_env.get("LITELLM_API_BASE", ""))
-                        _env_filled = _env_filled.replace("{{LITELLM_API_KEY}}", _parent_env.get("LITELLM_API_KEY", ""))
-                        _env_filled = _env_filled.replace("{{LITELLM_SSL_CERT}}", _parent_env.get("LITELLM_SSL_CERT", ""))
-                        _env_filled = _env_filled.replace("{{LITELLM_MODEL}}", _parent_env.get("LITELLM_SONNET_46_MODEL", "claude-sonnet-4-6"))
-                        result_files["api/.env"] = _env_filled
-                    reqs = backend_meta.get("requirements", [])
-                    if reqs:
-                        result_files["api/requirements.txt"] = "\n".join(reqs) + "\n"
-                    print(f"[_gen_page] Backend bundled: api/app_server.py + api/.env + api/requirements.txt", flush=True)
-
-                print(f"[_gen_page] Skill '{skill_key}' applied for {page_name} — config only", flush=True)
-                if progress:
-                    progress(f"skill:✓ {page_name} → [{skill_key}] done — pre-built template copied, config filled")
-                return page_name, result_files
-
-            # ── LLM path: no skill for this page type ───────────────────────
-            if progress:
-                progress(f"skill:✏️  {page_name} → no skill match — generating full page with LLM…")
-            from agents.component_contracts import build_component_api_section
-            contracts_section = build_component_api_section()
-            page_prompt = (
-                f"Original app description:\n{user_prompt}\n\n"
-                f"Infrastructure and shared components already generated:\n{comp_context}\n\n"
-                f"{contracts_section}\n\n"
-                f"Generate ONLY the page: {page_name}\n"
-                f"File: {page_path}\n"
-                f"Available shared components: {', '.join(shared_components) or 'none'}\n"
-                f"This page must be fully complete and working."
+            prompt = (
+                f"Fix these runtime/build errors in {page_file}.\n\n"
+                f"Errors found by QA:\n{error_text}\n\n"
+                f"Database schema (use these exact table/column names):\n{schema}\n\n"
+                f"Current file content:\n```tsx\n{current_code}\n```"
             )
             try:
-                page_data = chat_json(
-                    [{"role": "user", "content": page_prompt}],
-                    system=PASS3_SYSTEM_PROMPT,
+                fixed = chat(
+                    [{"role": "user", "content": prompt}],
+                    system=QA_HEAL_SYSTEM,
                     max_tokens=16000,
-                    temperature=0.1,
-                )
-                print(f"[_call_llm] Pass 3 page done: {page_name}", flush=True)
-                return page_name, page_data.get("files", {})
-            except Exception as pe:
-                print(f"[_call_llm] Pass 3 page {page_name} failed: {pe} — stub", flush=True)
-                stub = (
-                    f"import {{ Card }} from 'mobility-global-ds'\n"
-                    f"export default function {page_name}() {{\n"
-                    f"  return <Card title=\"{page_name}\"><p>Coming soon.</p></Card>\n"
-                    f"}}\n"
-                )
-                return page_name, {f"src/pages/{page_name}.tsx": stub}
+                ).strip()
+                # Strip markdown fences
+                if fixed.startswith("```"):
+                    fixed = _re.sub(r"^```[^\n]*\n", "", fixed)
+                    fixed = _re.sub(r"\n```\s*$", "", fixed.rstrip())
+                # Strip leading prose before actual code (LLM sometimes explains before writing code)
+                if fixed and not fixed.startswith("import") and not fixed.startswith("//") and not fixed.startswith("'use"):
+                    import_match = _re.search(r'^(import |// |/\*)', fixed, _re.MULTILINE)
+                    if import_match and import_match.start() > 0:
+                        leading = fixed[:import_match.start()]
+                        if not any(kw in leading for kw in ['from ', 'export ', 'const ', 'function ', 'interface ']):
+                            fixed = fixed[import_match.start():]
+                            print(f"[qa_heal] Stripped {import_match.start()} chars of leading prose from {page_file}", flush=True)
+                if fixed and fixed != files[page_file] and len(fixed) > 50:
+                    files[page_file] = fixed
+                    any_fixed = True
+                    print(f"[qa_heal] Fixed {page_file}", flush=True)
+            except Exception as ex:
+                print(f"[qa_heal] LLM fix failed for {page_file}: {ex}", flush=True)
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        # Cap at 4 concurrent LLM calls to avoid rate-limit / timeout collisions
-        max_workers = min(len(pages_to_gen), 4)
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {pool.submit(_gen_page, p): p for p in pages_to_gen}
-            completed = 0
-            for fut in as_completed(futures):
-                page_name, page_files = fut.result()
-                merged_files.update(page_files)
-                completed += 1
-                if progress:
-                    progress(f"llm_codegen:Pass 3/3: {page_name} done ({completed}/{len(pages_to_gen)})…")
+        if not any_fixed:
+            print("[qa_heal] No files changed — stopping early", flush=True)
+            break
 
-    # ── Post-Pass 3 safety net: detect missing component imports ───────────────
-    # Pages may import from '../components/X' but Pass 2 was skipped or incomplete.
-    # Detect these and generate the missing components via one LLM call.
-    import re as _re_comp
-    _missing_components: set[str] = set()
-    for path, content in merged_files.items():
-        if not path.startswith("src/pages/"):
-            continue
-        for m in _re_comp.finditer(r"from\s+['\"]\.\.\/components\/(\w+)['\"]", content):
-            comp_name = m.group(1)
-            comp_path = f"src/components/{comp_name}.tsx"
-            if comp_path not in merged_files:
-                _missing_components.add(comp_name)
+        # Write fixed files (Vite HMR will pick them up)
+        for rel_path, content in files.items():
+            if not content or not content.strip():
+                continue
+            fp = project_dir / rel_path
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(content, encoding="utf-8")
 
-    if _missing_components:
-        print(f"[_call_llm] Post-Pass 3: {len(_missing_components)} missing component(s) detected: {_missing_components}", flush=True)
+        # Give Vite a moment to recompile via HMR
+        import time
+        time.sleep(3)
+
+        # Re-run QA
         if progress:
-            progress(f"llm_codegen:Generating {len(_missing_components)} missing shared component(s)…")
-        _comp_prompt = (
-            f"App description:\n{user_prompt}\n\n"
-            f"Infrastructure:\n{_context_summary(merged_files)}\n\n"
-            f"Generate these shared components that are imported by pages but missing:\n"
-            + "\n".join(f"- src/components/{c}.tsx" for c in sorted(_missing_components))
-            + "\n\nEach component uses D3 (useEffect+useRef+ResizeObserver pattern) for charts/maps."
-            f"\nReturn JSON: {{\"files\": {{\"src/components/X.tsx\": \"...\", ...}}}}"
-        )
-        try:
-            _comp_data = chat_json(
-                [{"role": "user", "content": _comp_prompt}],
-                system=PASS2_SYSTEM_PROMPT,
-                max_tokens=32000,
-                temperature=0.1,
-            )
-            _comp_files = _comp_data.get("files", {})
-            merged_files.update(_comp_files)
-            print(f"[_call_llm] Generated {len(_comp_files)} missing component(s)", flush=True)
-        except Exception as ce:
-            print(f"[_call_llm] Missing component generation failed: {ce} — writing stubs", flush=True)
-            for c in _missing_components:
-                comp_path = f"src/components/{c}.tsx"
-                merged_files[comp_path] = (
-                    f"export default function {c}(props: any) {{\n"
-                    f"  return <div className=\"p-4 text-sm text-gray-500\">{{/* {c} */}}</div>\n"
-                    f"}}\n"
-                )
+            progress(f"crew:Re-running QA after fix round {round_n+1}…")
+        qa_report = run_qa(project_name, port, project_dir)
 
-    result = {
-        "projectName": pass1_data.get("projectName", "generated-app"),
-        "title":       pass1_data.get("title", "Generated App"),
-        "description": pass1_data.get("description", ""),
-        "files":       merged_files,
-    }
-    print(f"[_call_llm] multi-pass complete: {len(merged_files)} total files", flush=True)
-    return result
+        if qa_report.passed:
+            print(f"[qa_heal] QA passed after round {round_n+1}!", flush=True)
+            if progress:
+                progress(f"crew:QA passed after auto-fix! Score: {qa_report.score}/100")
+            break
+        else:
+            remaining = sum(1 for f in qa_report.findings if f.severity == "error")
+            print(f"[qa_heal] Still {remaining} errors after round {round_n+1}", flush=True)
+
+    return qa_report, files
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -1593,8 +1558,13 @@ def kill_server(project_name: str, forget_port: bool = False):
 
 
 def _augment_prompt(prompt: str) -> str:
-    """Append a reminder about libraries that must be avoided."""
+    """Append mandatory system constraints to every generation prompt."""
     notes = [
+        "DATA ARCHITECTURE (MANDATORY): ALL app data MUST live in a SQLite database. "
+        "A schema.sql, seed.sql, and API server are ALWAYS created. "
+        "The frontend NEVER contains hardcoded data — it fetches everything via REST API "
+        "(useApi hook → GET /api/data/{tableName}). This applies to EVERY app regardless "
+        "of what the user prompt says.",
         "CHART REMINDER: Use D3.js (useEffect + useRef + SVG) for any charts built from scratch. "
         "Do NOT use Highcharts — it breaks in Vite ESM mode.",
         "MAP DATA — static imports only (dynamic import/fetch = blank maps): "
@@ -1604,10 +1574,12 @@ def _augment_prompt(prompt: str) -> str:
     return prompt + "\n\n[SYSTEM NOTES — follow these exactly]\n" + "\n".join(notes)
 
 
-def generate_project(prompt: str, progress=None, project_name_override: str | None = None) -> dict:
+def generate_project(prompt: str, progress=None, project_name_override: str | None = None,
+                     architecture: dict | None = None) -> dict:
     """
     Generate a React/TS/Tailwind project from a prompt.
     progress(step: str) is called at each stage for CLI/UI feedback.
+    architecture: pre-approved architecture from /api/draft (skips Stage 1 if provided).
     Returns project info dict.
     """
     if not os.environ.get("LITELLM_API_BASE") and not os.environ.get("LITELLM_API_KEY"):
@@ -1618,10 +1590,52 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
             progress(s)
 
     _p("llm")
-    data = _call_llm([
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": _augment_prompt(prompt)},
-    ])
+
+    # ── Detect refinement: if project already exists, read existing state ──────
+    existing_schema = ""
+    existing_seed = ""
+    existing_files: dict[str, str] = {}
+    _existing_dir = None
+    if project_name_override:
+        _existing_dir = GENERATED_DIR / re.sub(r"[^a-z0-9-]", "-", project_name_override.lower()).strip("-")
+        if _existing_dir.exists():
+            # Read schema context
+            _schema_f = _existing_dir / "api" / "schema.sql"
+            _seed_f = _existing_dir / "api" / "seed.sql"
+            if not _schema_f.exists():
+                _schema_f = _existing_dir / "schema.sql"
+                _seed_f = _existing_dir / "seed.sql"
+            if _schema_f.exists():
+                existing_schema = _schema_f.read_text(encoding="utf-8")
+            if _seed_f.exists():
+                existing_seed = _seed_f.read_text(encoding="utf-8")
+
+            # Read all existing source files for selective regeneration
+            for fp in _existing_dir.rglob("*"):
+                if fp.is_file() and fp.suffix in (".tsx", ".ts", ".css", ".sql", ".py", ".html", ".json", ".js", ".txt"):
+                    rel = fp.relative_to(_existing_dir).as_posix()
+                    if rel.startswith("node_modules/") or rel.startswith("."):
+                        continue
+                    try:
+                        existing_files[rel] = fp.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
+            if existing_files:
+                _p(f"crew:Detected existing project ({len(existing_files)} files) — selective regeneration mode")
+
+    from agents.orchestrator import CrewOrchestrator
+    _p("crew:Initializing multi-agent pipeline…")
+    orchestrator = CrewOrchestrator(progress=_p)
+    if existing_schema:
+        orchestrator.existing_context = {
+            "schema": existing_schema,
+            "seed_preview": existing_seed[:5000],
+        }
+    if existing_files:
+        orchestrator.existing_files = existing_files
+    if architecture:
+        orchestrator.approved_architecture = architecture
+    data = orchestrator.generate(_augment_prompt(prompt))
 
     if project_name_override:
         project_name = re.sub(r"[^a-z0-9-]", "-", project_name_override.lower()).strip("-") or "app"
@@ -1639,9 +1653,11 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
 
     project_dir = GENERATED_DIR / project_name
 
-    # ── Ensure schema.sql exists when API-first signals are present ────────
-    files = _ensure_schema_sql(files)
-    # ── Bundle API server + useApi hook if schema.sql exists ──────────────
+    # ── Ensure essential boilerplate (safety net for partial/refinement builds) ──
+    files = _ensure_boilerplate(files, project_name)
+    # ── ALL apps use SQLite + API — ensure schema.sql always exists ─────────
+    files = _ensure_schema_sql(files, force=True)
+    # ── Bundle API server + useApi hook (always — every app has an API) ────
     files = _bundle_api_server(files)
 
     # Assign API port if this project has an API server
@@ -1691,6 +1707,11 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
     if not ok:
         raise RuntimeError(f"Shared npm install failed:\n{log[-2000:]}")
     project_deps = _get_project_deps(project_dir)
+    # Scan actual source imports — catches packages the LLM uses but didn't add to package.json
+    scanned_imports = _scan_imports_from_files(project_dir)
+    for pkg in scanned_imports:
+        if pkg not in project_deps:
+            project_deps[pkg] = "latest"
     ok2, log2 = _link_shared_nm(project_dir, project_deps, progress=_p)
     if not ok2:
         # Fall back to per-project install if junction fails
@@ -1722,7 +1743,7 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
         api_proc = None
     if api_proc:
         _api_servers[project_name] = api_proc
-        time.sleep(2)  # Give API server time to init DB and start
+        _wait_for_api(api_port, timeout=15)
     proc = _start_vite(project_dir, port)
     _dev_servers[project_name] = proc
 
@@ -1731,6 +1752,13 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
 
     _p("qa")
     qa_report = run_qa(project_name, port, project_dir)
+
+    # ── QA-Heal loop: if QA found fixable errors, feed them to LLM and retry ──
+    if not qa_report.passed and qa_report.pages_fail:
+        _p("crew:QA found errors — attempting auto-fix…")
+        qa_report, files = _qa_heal(
+            project_dir, project_name, port, qa_report, files, progress=_p
+        )
 
     _p("ready")
     return {
@@ -1798,14 +1826,17 @@ def start_project(project_name: str) -> dict:
     )
     patched = patched.replace("})\n", server_block + "})\n", 1)
     vite_cfg.write_text(patched, encoding="utf-8")
+    # Ensure shared node_modules exist (installs any missing packages like xlsx, jspdf)
+    _ensure_shared_nm_once()
     # Ensure node_modules are linked (junction to shared, or fall back to real install)
     nm = project_dir / "node_modules"
     if not nm.exists():
-        ok_s, _ = _ensure_shared_nm_once()
-        if ok_s:
-            _link_shared_nm(project_dir, _get_project_deps(project_dir))
-        else:
-            _npm_install(project_dir)
+        ok_s = True
+        deps = _get_project_deps(project_dir)
+        for pkg in _scan_imports_from_files(project_dir):
+            if pkg not in deps:
+                deps[pkg] = "latest"
+        _link_shared_nm(project_dir, deps)
     _link_ds_into_project(project_dir)
     # Start API server if app_server.py exists
     if has_api:
@@ -1824,11 +1855,13 @@ def start_project(project_name: str) -> dict:
         api_proc = _start_api_server(project_dir, api_port=api_port)
         if api_proc:
             _api_servers[project_name] = api_proc
-            time.sleep(2)
+            _wait_for_api(api_port, timeout=15)
     proc = _start_vite(project_dir, port)
     _dev_servers[project_name] = proc
     wait_for_port(port, timeout=60)
-    return {"projectName": project_name, "port": port, "apiPort": api_port, "url": "/app/" + project_name + "/"}
+    reg = _load_registry().get(project_name, {})
+    return {"projectName": project_name, "port": port, "apiPort": api_port, "url": "/app/" + project_name + "/",
+            "title": reg.get("title", project_name), "architecture": reg.get("architecture", {})}
 
 
 def stop_project(project_name: str):
@@ -1837,26 +1870,29 @@ def stop_project(project_name: str):
 
 def delete_project(project_name: str):
     kill_server(project_name, forget_port=True)
-    # Wait a moment for file handles to release after process kill
-    time.sleep(1)
+    # Wait for file handles to release (Vite watchers, OneDrive sync)
+    time.sleep(2)
     project_dir = GENERATED_DIR / project_name
     if not project_dir.exists():
         return
+    import subprocess as _sp
+
+    # Remove .vite cache (Vite holds locks on these)
+    vite_cache = project_dir / ".vite"
+    if vite_cache.exists():
+        shutil.rmtree(vite_cache, ignore_errors=True)
+
     # Remove node_modules — if it's a junction to shared-node-modules, just unlink it
     node_modules = project_dir / "node_modules"
     if node_modules.exists():
         try:
-            import subprocess as _sp
-            # Check if it's a junction (reparse point) — rmdir removes the link without following it
             result = _sp.run(
                 ["cmd", "/c", "fsutil", "reparsepoint", "query", str(node_modules)],
                 capture_output=True, timeout=5,
             )
             if result.returncode == 0:
-                # It's a junction — remove the link only, not the target
                 _sp.run(["cmd", "/c", "rmdir", str(node_modules)], capture_output=True, timeout=10)
             else:
-                # Real directory — delete recursively
                 _sp.run(
                     ["cmd", "/c", "rd", "/s", "/q", str(node_modules)],
                     capture_output=True, timeout=30,
@@ -1864,18 +1900,27 @@ def delete_project(project_name: str):
         except Exception:
             shutil.rmtree(node_modules, ignore_errors=True)
         time.sleep(0.5)
-    # Now delete the rest
-    shutil.rmtree(project_dir, ignore_errors=True)
-    # If still there (some files locked), try rd /s /q on whole dir
-    if project_dir.exists():
+
+    # Retry deletion up to 3 times — OneDrive and Windows can hold file locks briefly
+    for attempt in range(3):
+        shutil.rmtree(project_dir, ignore_errors=True)
+        if not project_dir.exists():
+            break
+        # Fallback: force with rd /s /q
         try:
-            import subprocess
-            subprocess.run(
+            _sp.run(
                 ["cmd", "/c", "rd", "/s", "/q", str(project_dir)],
                 capture_output=True, timeout=30,
             )
         except Exception:
             pass
+        if not project_dir.exists():
+            break
+        # Wait progressively longer for locks to release
+        time.sleep(2 * (attempt + 1))
+
+    if project_dir.exists():
+        print(f"[delete_project] WARNING: could not fully delete {project_dir} — files may be locked by OneDrive or another process", flush=True)
 
 
 def _migrate_existing_projects():

@@ -10,6 +10,7 @@
  */
 import { useState, useEffect, useMemo } from 'react'
 import { config } from '../config/DataGrid.config'
+import { ExportToolbar } from '../components/ExportToolbar'
 
 const _API = (import.meta as any).env?.BASE_URL?.replace(/\/$/, '') || ''
 
@@ -264,10 +265,16 @@ export default function DataGridPage() {
           <span style={{ ...s.btnSec, background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', display: 'inline-flex', alignItems: 'center' }}>
             {sorted.length.toLocaleString()} rows
           </span>
-          <div style={{ marginLeft: 'auto' }}>
-            <button style={s.btnPri} onClick={() => exportCSV(sorted, columns, csvFilename ?? 'export.csv')}>
-              Export CSV
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button style={s.btnSec} onClick={() => exportCSV(sorted, columns, csvFilename ?? 'export.csv')}>
+              CSV ↓
             </button>
+            <ExportToolbar
+              data={sorted}
+              columns={columns.map((c: any) => ({ key: c.key, header: c.header, format: c.type }))}
+              title={pageTitle ?? 'Data'}
+              filename={csvFilename?.replace('.csv', '') ?? 'export'}
+            />
           </div>
         </div>
       </div>

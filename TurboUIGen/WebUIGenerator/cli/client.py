@@ -40,6 +40,7 @@ RESET  = "\033[0m"
 
 STEPS = {
     "llm":     ("🤖", "Calling LLM to generate project files…"),
+    "crew":    ("🤖", "Multi-agent crew building your app…"),
     "write":   ("📝", "Writing files to disk…"),
     "install": ("📦", "Running npm install…"),
     "start":   ("🚀", "Starting Vite dev server…"),
@@ -54,6 +55,12 @@ def _banner():
 
 
 def _progress(step: str):
+    # Handle prefixed progress messages (crew:..., skill:..., llm_codegen:...)
+    if ":" in step and step.split(":")[0] in ("crew", "skill", "llm_codegen", "tsc_heal"):
+        prefix, msg = step.split(":", 1)
+        icons = {"crew": "🤖", "skill": "⚡", "llm_codegen": "🔧", "tsc_heal": "🩹"}
+        print(f"  {icons.get(prefix, '…')}  {msg}")
+        return
     icon, label = STEPS.get(step, ("…", step))
     print(f"  {icon}  {label}")
 

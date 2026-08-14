@@ -29,7 +29,7 @@ Full data explorer for the existing `global_sales` table (fetched via `/api/data
 - Filter bar: search box, Region dropdown, Make dropdown, Quarter dropdown, Reset button, row count badge.
 - Sortable data table: Country, Region (colored badge), Make (badge), Model, Quarter, Volume, Revenue, YTD Growth (green/red badge), Market Share (progress bar).
 - Pagination at 20 rows per page.
-- Export CSV button that downloads the current filtered data.
+- **Export toolbar** above the table with "Excel ↓" and "PDF ↓" buttons that export the currently-filtered data.
 
 ### Inventory
 Vehicle stock management view. Fetch data from `/api/data/inventory` using the `useApi` hook.
@@ -37,4 +37,5 @@ Vehicle stock management view. Fetch data from `/api/data/inventory` using the `
 - Four KPI cards at top: Total Stock, % Available, In Transit, Avg Days on Lot.
 - Filter bar: search (by VIN/model/dealer city), Status dropdown, Make dropdown, Reset button.
 - Sortable table: VIN (monospace), Make (badge), Model, Year, Trim, Color, MSRP, Status (color badge: Available=green, Reserved=amber, In Transit=blue, Sold=gray), Dealer City, Days on Lot (0–30 green, 31–60 amber, 61+ red).
+- **Export toolbar** above the table with "Excel ↓" and "PDF ↓" buttons that export the currently-filtered inventory data.
 - Below the table: a horizontal bar chart showing vehicle count in 4 age buckets (0–30 / 31–60 / 61–90 / 90+ days).

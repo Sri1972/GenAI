@@ -85,18 +85,7 @@ Add 5 pages to the sidebar:
 
 Executive portfolio overview — the PMO's "war room" view.
 
-- **KPI row (5 cards):**
-  - Active Projects (count where status != Completed)
-  - On Track % (Green RAG / total active)
-  - Total Budget ($XX.XM formatted)
-  - Budget Consumed (sum spent / sum budget as %)
-  - At Risk + Delayed (count)
-
-- **Charts row (2 side-by-side):**
-  - Left: Horizontal stacked bar — project count by department, stacked by RAG (Green/Amber/Red segments)
-  - Right: Donut chart — projects by phase (Initiation/Planning/Execution/Closing)
-
-- **Project cards grid (below):** Show all projects as cards in a responsive grid (3 columns).
+- **Project cards grid:** Show all projects as cards in a responsive grid (3 columns).
   Each card shows:
   - Project name (bold) + project_id (muted)
   - PM name
@@ -109,18 +98,14 @@ Executive portfolio overview — the PMO's "war room" view.
 
 - **Filter bar above cards:** Department dropdown, Priority dropdown, Status dropdown, RAG dropdown, text search (project name or PM name), Reset button
 
+- **Summary bar above cards (inline stats, not KPI cards):** Active Projects count, On Track %, Total Budget, Budget Consumed %, At Risk + Delayed count — displayed as a compact horizontal stat strip (single row of labeled values, no card borders).
+
 ---
 
 ### Page 2: Resources
 **Sidebar label:** "Resources"
 
 Resource pool management — who's available, who's overloaded.
-
-- **KPI row (4 cards):**
-  - Total Headcount
-  - Avg Utilization % (mean of utilization field)
-  - Over-allocated (count where utilization > 105)
-  - Available (count where availability = Available)
 
 - **Charts row (2 side-by-side):**
   - Left: Bar chart — average utilization by department
@@ -151,12 +136,6 @@ Resource pool management — who's available, who's overloaded.
 
 Weekly time tracking view with aggregations.
 
-- **KPI row (4 cards):**
-  - Total Hours Logged (sum all)
-  - Billable % (billable=Yes hours / total hours)
-  - Avg Hours/Person/Week
-  - Most Active Project (project with highest total hours)
-
 - **Charts row (2 side-by-side):**
   - Left: Stacked bar — total hours by week (last 8 weeks), stacked by activity type
   - Right: Donut chart — hours by activity (Development/Design/Testing/Meetings/Planning/Admin/Support)
@@ -180,12 +159,6 @@ Weekly time tracking view with aggregations.
 **Sidebar label:** "Capacity"
 
 Capacity planning heatmap and allocation view.
-
-- **KPI row (4 cards):**
-  - Total Weekly Capacity (sum capacity_hrs across all resources)
-  - Total Allocated (sum allocated_hrs)
-  - Spare Capacity (total capacity - total allocated, formatted as hours)
-  - Utilization Band: show count in each band (Under <70%, Optimal 70–100%, Over >100%)
 
 - **Heatmap (full width):** Resources (y-axis, grouped by department) vs Utilization.
   - Simple horizontal bar per resource showing allocated vs capacity, colored by utilization band.

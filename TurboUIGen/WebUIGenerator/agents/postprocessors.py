@@ -221,6 +221,19 @@ def _patch_vite_for_ds(files: dict, project_dir=None) -> dict:
     ds_index = _DS_CLEAN_JUNCTION + "/src/index.ts"
     shared_react = _SHARED_NM_JUNCTION + "/react"
     shared_rdom = _SHARED_NM_JUNCTION + "/react-dom"
+    snm = _SHARED_NM_JUNCTION
+
+    # Export package aliases — only include if the files actually exist on disk
+    export_aliases = ""
+    _xlsx_path = Path(snm.replace("/", os.sep)) / "xlsx" / "xlsx.mjs"
+    _jspdf_path = Path(snm.replace("/", os.sep)) / "jspdf" / "dist" / "jspdf.es.min.js"
+    _autotable_path = Path(snm.replace("/", os.sep)) / "jspdf-autotable" / "dist" / "jspdf.plugin.autotable.js"
+    if _xlsx_path.exists():
+        export_aliases += "      'xlsx': '" + snm + "/xlsx/xlsx.mjs',\n"
+    if _jspdf_path.exists():
+        export_aliases += "      'jspdf': '" + snm + "/jspdf/dist/jspdf.es.min.js',\n"
+    if _autotable_path.exists():
+        export_aliases += "      'jspdf-autotable': '" + snm + "/jspdf-autotable/dist/jspdf.plugin.autotable.js',\n"
 
     alias_block = (
         "    alias: {\n"
@@ -230,6 +243,7 @@ def _patch_vite_for_ds(files: dict, project_dir=None) -> dict:
         "      'react': '" + shared_react + "/index.js',\n"
         "      'react-dom/client': '" + shared_rdom + "/client.js',\n"
         "      'react-dom': '" + shared_rdom + "/index.js',\n"
+        + export_aliases +
         "    },\n"
     )
 
@@ -579,15 +593,20 @@ def _patch_map_components(files: dict) -> dict:
     2. UsaSalesMap stateCode normalisation.
     3. react-simple-maps import removal.
     """
-    # ── Fix 3: strip react-simple-maps from package.json ─────────────────────
+    # ── Fix 3: strip non-existent / hallucinated packages from package.json ──
+    _STRIP_PACKAGES = [
+        "react-simple-maps", "@types/react-simple-maps",
+        "@types/us-atlas", "@types/world-atlas",
+        "@types/topojson", "@types/topojson-specification",
+        "@types/geojson-vt",
+        "mobility-global-ds", "@mobility-global/ds",
+    ]
     for path in ("package.json",):
         if path in files:
-            files[path] = re.sub(
-                r',?\s*"react-simple-maps"\s*:\s*"[^"]*"', '', files[path]
-            )
-            files[path] = re.sub(
-                r',?\s*"@types/react-simple-maps"\s*:\s*"[^"]*"', '', files[path]
-            )
+            for pkg in _STRIP_PACKAGES:
+                files[path] = re.sub(
+                    r',?\s*"' + re.escape(pkg) + r'"\s*:\s*"[^"]*"', '', files[path]
+                )
 
     # ── Fix 1 & 2: patch map TSX files ───────────────────────────────────────
     for path, content in list(files.items()):
@@ -1089,6 +1108,236 @@ def _inject_api_proxy(files: dict, project_name: str = "", port: int = 0, api_po
     return files
 
 
+def _fix_base_url(files: dict) -> dict:
+    """Fix wrong BASE_URL patterns in files that call /api/. Must use import.meta.env.BASE_URL."""
+    correct = "(import.meta as any).env?.BASE_URL?.replace(/\\/$/, '') || ''"
+    correct_line = f"const BASE_URL = {correct}"
+    wrong_patterns = [
+        # VITE_API_URL / VITE_BASE_URL / VITE_API_BASE_URL variants (single or double quotes)
+        re.compile(r"\(import\.meta\s+as\s+any\)\.env\?\.(VITE_API_URL|VITE_BASE_URL|VITE_API_BASE_URL)\s*\?\?\s*['\"][^'\"]*['\"]"),
+        re.compile(r"import\.meta\.env\.(VITE_API_URL|VITE_BASE_URL|VITE_API_BASE_URL)\s*\|\|\s*['\"][^'\"]*['\"]"),
+        re.compile(r"import\.meta\.env\?\.(VITE_API_URL|VITE_BASE_URL|VITE_API_BASE_URL)\s*\?\?\s*['\"][^'\"]*['\"]"),
+        re.compile(r"import\.meta\.env\.(VITE_API_URL|VITE_BASE_URL|VITE_API_BASE_URL)\s*\?\?\s*['\"][^'\"]*['\"]"),
+    ]
+    # Hardcoded empty string: const BASE_URL = '' or ""
+    empty_base_url = re.compile(r"^(const|let|var)\s+BASE_URL\s*=\s*['\"]['\"]", re.MULTILINE)
+    # Bare fetch('/api/...') without any BASE_URL prefix
+    bare_api_fetch = re.compile(r"""(fetch\s*\(\s*)(['"`])/api/""")
+    has_base_url_decl = re.compile(r"(const|let|var)\s+(BASE_URL|_API_BASE|API_BASE)\s*=")
+    has_base_url_usage = re.compile(r"\$\{(BASE_URL|_API_BASE|API_BASE)\}")
+    changed = False
+    for path, content in list(files.items()):
+        if not path.endswith((".tsx", ".ts")):
+            continue
+        # Only fix files that actually call /api/
+        if "/api/" not in content:
+            continue
+        for pat in wrong_patterns:
+            if pat.search(content):
+                content = pat.sub(correct, content)
+                changed = True
+        # Fix hardcoded empty BASE_URL in files that fetch from /api/
+        if empty_base_url.search(content):
+            content = empty_base_url.sub(correct_line, content)
+            changed = True
+        # Fix bare fetch('/api/...') — no BASE_URL used at all
+        if bare_api_fetch.search(content) and not has_base_url_usage.search(content):
+            # Inject BASE_URL declaration after the last import line
+            lines = content.split('\n')
+            insert_idx = 0
+            for i, line in enumerate(lines):
+                if line.startswith('import ') or line.startswith('from '):
+                    insert_idx = i + 1
+            lines.insert(insert_idx, f"\n{correct_line}\n")
+            content = '\n'.join(lines)
+            # Replace bare fetch('/api/ with fetch(`${BASE_URL}/api/
+            content = bare_api_fetch.sub(r'\1`${BASE_URL}/api/', content)
+            # Close backtick-template: '/api/chat' -> `${BASE_URL}/api/chat`
+            # Handle patterns: fetch('/api/chat', ...) and fetch("/api/chat", ...)
+            # The regex already put `${BASE_URL}/api/ — now fix the closing quote
+            # Replace remaining single/double quote closings after /api paths with backtick
+            content = re.sub(
+                r'(\$\{BASE_URL\}/api/[^\'"`\s,)]+)[\'"]',
+                r'\1`',
+                content
+            )
+            changed = True
+        files[path] = content
+    if changed:
+        print("[postprocessor] Fixed wrong BASE_URL pattern -> import.meta.env.BASE_URL", flush=True)
+    return files
+
+
+def _strip_double_browser_router(files: dict) -> dict:
+    """Remove BrowserRouter from App.tsx — main.tsx always provides it."""
+    app_key = "src/App.tsx"
+    if app_key not in files:
+        return files
+    content = files[app_key]
+    if "BrowserRouter" not in content:
+        return files
+
+    # Remove BrowserRouter from import statement
+    content = re.sub(
+        r",?\s*BrowserRouter\s*,?",
+        lambda m: ", " if m.group(0).count(",") == 2 else "",
+        content,
+    )
+    # Clean up import artifacts: "import { , Routes" → "import { Routes"
+    content = re.sub(r"\{\s*,\s*", "{ ", content)
+    content = re.sub(r",\s*\}", " }", content)
+
+    # Remove <BrowserRouter ...> wrapper — handles patterns like:
+    #   <BrowserRouter>...<AppInner />...</BrowserRouter>
+    #   <BrowserRouter basename={...}>...<App />...</BrowserRouter>
+    content = re.sub(r"\s*<BrowserRouter[^>]*>\s*\n?", "", content)
+    content = re.sub(r"\s*</BrowserRouter>\s*\n?", "", content)
+
+    # If the LLM split into App + AppInner, collapse the wrapper:
+    #   const App = () => { return ( <AppInner /> ) }; export default App;
+    # → export default AppInner;
+    m = re.search(
+        r"(?:const|function)\s+App\b[^{]*\{\s*return\s*\(\s*<(\w+)\s*/>\s*\)\s*;?\s*\}",
+        content,
+    )
+    if m:
+        inner_name = m.group(1)
+        content = content[:m.start()] + content[m.end():]
+        content = re.sub(r"export\s+default\s+App\s*;?", f"export default {inner_name};", content)
+
+    if content != files[app_key]:
+        files[app_key] = content
+        print("[postprocessor] Stripped BrowserRouter from App.tsx (main.tsx provides it)", flush=True)
+    return files
+
+
+def _fix_diff_map_on_object(files: dict) -> dict:
+    """
+    Fix LLM bug: diff state is Record<string, {diff: DiffLine[], ...}> but code calls
+    `diff.map(...)` instead of `diff.diff.map(...)`.
+
+    Detection: find useState<Record<..., { diff: ... }>> pattern, then look for
+    a conditional render `{someVar ? (...someVar.map(...)...) : ...}` where someVar
+    was assigned from that record.
+    """
+    pat_state = re.compile(
+        r'useState<Record<[^>]*\{\s*diff\s*:', re.DOTALL
+    )
+    pat_bad_map = re.compile(
+        r'\b(diff|diffResult|diffData)\s*&&\s*.*?\1\.map\('
+        r'|\{(diff|diffResult|diffData)\s*\?\s*\([^)]*\2\.map\('
+        r'|\{(diff|diffResult|diffData)\s*\?\s*<[^>]*>.*?\3\.map\(',
+        re.DOTALL
+    )
+    pat_simple = re.compile(r'\{diff\.map\(')
+    changed = False
+    for fpath, content in list(files.items()):
+        if not fpath.endswith('.tsx') or 'node_modules' in fpath:
+            continue
+        if not pat_state.search(content):
+            continue
+        if pat_simple.search(content):
+            content = content.replace('{diff.map(', '{diff.diff.map(')
+            files[fpath] = content
+            changed = True
+    if changed:
+        print("[postprocessor] Fixed diff.map() -> diff.diff.map() (state object wraps array)", flush=True)
+    return files
+
+
+def _fix_table_name_mismatches(files: dict) -> dict:
+    """
+    Validate table names in useApi('...') and apiAggregate('...') calls against
+    the actual schema.sql.  The LLM frequently generates singular names when the
+    schema uses plural (e.g., 'forecast' instead of 'forecasts'), or vice versa.
+
+    Strategy:
+    1. Extract all CREATE TABLE names from schema.sql.
+    2. Scan .ts/.tsx files for useApi('x') and apiAggregate('x') calls.
+    3. If 'x' is not in the table set, try common variants (add/remove 's'/'es',
+       underscore differences) and replace with the matching table name.
+    """
+    schema_content = files.get("api/schema.sql", "") or files.get("schema.sql", "")
+    if not schema_content:
+        return files
+
+    table_names = set(
+        re.findall(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", schema_content, re.IGNORECASE)
+    )
+    if not table_names:
+        return files
+
+    # Build a lookup: normalized form → actual table name
+    table_lookup: dict[str, str] = {}
+    for t in table_names:
+        table_lookup[t.lower()] = t
+        # also index without trailing 's' or 'es' for reverse lookup
+        if t.lower().endswith('es') and len(t) > 3:
+            table_lookup[t.lower()[:-2]] = t
+        if t.lower().endswith('s') and len(t) > 2:
+            table_lookup[t.lower()[:-1]] = t
+
+    def _find_correct_table(wrong_name: str) -> str | None:
+        """Return the correct table name if wrong_name is close to one, else None."""
+        low = wrong_name.lower()
+        if low in table_lookup:
+            actual = table_lookup[low]
+            return actual if actual != wrong_name else None
+        # Try adding 's' or 'es'
+        for suffix in ('s', 'es'):
+            candidate = low + suffix
+            if candidate in table_lookup:
+                return table_lookup[candidate]
+        # Try removing trailing 's' or 'es'
+        if low.endswith('es') and low[:-2] in table_lookup:
+            return table_lookup[low[:-2]]
+        if low.endswith('s') and low[:-1] in table_lookup:
+            return table_lookup[low[:-1]]
+        # Try underscore variants: 'globalSales' -> 'global_sales'
+        # camelCase to snake_case
+        snake = re.sub(r'([a-z])([A-Z])', r'\1_\2', wrong_name).lower()
+        if snake in table_lookup:
+            return table_lookup[snake]
+        if snake + 's' in table_lookup:
+            return table_lookup[snake + 's']
+        return None
+
+    # Pattern to match useApi('tableName') or apiAggregate('tableName')
+    call_pattern = re.compile(
+        r"""(useApi(?:<[^>]*>)?\s*\(\s*|apiAggregate\s*\(\s*)(['"])(\w+)\2"""
+    )
+
+    changed = False
+    for path, content in list(files.items()):
+        if not path.endswith((".tsx", ".ts")):
+            continue
+        if "useApi" not in content and "apiAggregate" not in content:
+            continue
+
+        def _replace_table(m: re.Match) -> str:
+            prefix = m.group(1)
+            quote = m.group(2)
+            name = m.group(3)
+            if name.lower() in (t.lower() for t in table_names):
+                # Exact match (case-insensitive) — might need case fix
+                for t in table_names:
+                    if t.lower() == name.lower() and t != name:
+                        return f"{prefix}{quote}{t}{quote}"
+                return m.group(0)
+            correct = _find_correct_table(name)
+            if correct:
+                return f"{prefix}{quote}{correct}{quote}"
+            return m.group(0)
+
+        new_content = call_pattern.sub(_replace_table, content)
+        if new_content != content:
+            files[path] = new_content
+            changed = True
+            print(f"[_fix_table_name_mismatches] Fixed table name(s) in {path}", flush=True)
+
+    return files
+
+
 def run_all_postprocessors(files: dict, project_dir=None, project_name: str = "", port: int = 0, api_port: int = 0) -> dict:
     """
     Run all post-processors in the correct order and return the patched files dict.
@@ -1108,6 +1357,10 @@ def run_all_postprocessors(files: dict, project_dir=None, project_name: str = ""
     files = _fix_prop_contracts(files)
     files = _fix_chart_container(files)
     files = _fix_self_wrapping_charts(files)
+    files = _strip_double_browser_router(files)
+    files = _fix_base_url(files)
+    files = _fix_diff_map_on_object(files)
+    files = _fix_table_name_mismatches(files)
     files = _patch_index_html(files)
     files = _ensure_tsconfig_vite_types(files)
     files = _strip_data_imports(files)

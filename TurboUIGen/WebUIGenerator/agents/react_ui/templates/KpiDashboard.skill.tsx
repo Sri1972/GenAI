@@ -70,8 +70,8 @@ function BarChart({ chart }: { chart: any }) {
     const data = Array.from(aggMap.values())
     const tip = makeTip()
     const H = Math.max(200, data.length * 36 + 60)
-    const W = ref.current.clientWidth || 400
-    const m = { top: 10, right: 60, bottom: 30, left: 130 }
+    const W = ref.current.parentElement?.clientWidth || ref.current.clientWidth || 400
+    const m = { top: 10, right: 16, bottom: 30, left: 130 }
     const iW = W - m.left - m.right, iH = H - m.top - m.bottom
     const svg = d3.select(ref.current)
     svg.selectAll('*').remove()
@@ -100,9 +100,14 @@ function BarChart({ chart }: { chart: any }) {
       .transition().duration(400).attr('width', (d: any) => x(d.value))
     g.selectAll('.lbl').data(data).join('text')
       .attr('class', 'lbl')
-      .attr('x', (d: any) => x(d.value) + 6)
+      .attr('x', (d: any) => {
+        const bw = x(d.value)
+        return bw > iW * 0.75 ? bw - 8 : bw + 6
+      })
       .attr('y', (d: any) => y(d.label)! + y.bandwidth() / 2 + 4)
-      .attr('font-size', 11).attr('fill', '#6B7280')
+      .attr('font-size', 11)
+      .attr('fill', (d: any) => x(d.value) > iW * 0.75 ? '#fff' : '#6B7280')
+      .attr('text-anchor', (d: any) => x(d.value) > iW * 0.75 ? 'end' : 'start')
       .text((d: any) => fmt(d.value))
     return () => { tip.remove() }
   }, [chart, fmt])
@@ -166,8 +171,8 @@ function LineChart({ chart }: { chart: any }) {
     const series  = chart?.series  ?? []
     if (!xLabels.length || !series.length) return
     const tip = makeTip()
-    const W = ref.current.clientWidth || 400, H = 260
-    const m = { top: 20, right: 20, bottom: 40, left: 55 }
+    const W = ref.current.parentElement?.clientWidth || ref.current.clientWidth || 400, H = 280
+    const m = { top: 20, right: 20, bottom: 60, left: 55 }
     const iW = W - m.left - m.right, iH = H - m.top - m.bottom
     const svg = d3.select(ref.current).attr('height', H)
     svg.selectAll('*').remove()
@@ -219,7 +224,7 @@ function LineChart({ chart }: { chart: any }) {
       .on('mouseleave', () => tip.style('display', 'none'))
     return () => { tip.remove() }
   }, [chart, fmt])
-  return <svg ref={ref} style={{ width: '100%', height: 260, display: 'block' }} />
+  return <svg ref={ref} style={{ width: '100%', height: 280, display: 'block' }} />
 }
 
 // ── Universal chart slot — picks renderer by type ─────────────────────────────
@@ -236,13 +241,35 @@ function ChartSlot({ chart }: { chart: any }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function KpiDashboardPage() {
-  const { pageTitle, kpiCards, chart1, chart2, tableName, tableColumns } = config as any
+  const { pageTitle, kpiCards: staticKpis, kpiTableName, kpiMapping, chart1, chart2, tableName, tableColumns } = config as any
 
+  const [kpiCards, setKpiCards] = useState<any[]>(staticKpis ?? [])
   const [chart1Data, setChart1Data] = useState<any[] | null>(chart1?.data ?? null)
   const [chart2Data, setChart2Data] = useState<any[] | null>(chart2?.data ?? null)
   const [tableRows, setTableRows]   = useState<any[] | null>(null)
 
   useEffect(() => {
+    // Fetch KPIs from API table if configured
+    if (kpiTableName) {
+      fetch(`${_API}/api/data/${kpiTableName}?limit=20`)
+        .then(r => r.json())
+        .then(j => {
+          const rows = j.data || []
+          if (rows.length) {
+            const m = kpiMapping || {}
+            setKpiCards(rows.map((r: any) => ({
+              label: r[m.label || 'metric'] || r.label || r.metric || '',
+              value: r[m.value || 'value'] || '',
+              change: r[m.change || 'change_pct'] != null
+                ? `${Number(r[m.change || 'change_pct']) > 0 ? '+' : ''}${r[m.change || 'change_pct']}%`
+                : '',
+              direction: r[m.direction || 'direction'] || 'neutral',
+              icon: '',
+            })))
+          }
+        })
+        .catch(() => {})
+    }
     if (chart1?.tableName && !chart1Data) {
       fetch(`${_API}/api/data/${chart1.tableName}?limit=200`)
         .then(r => r.json())
@@ -267,14 +294,14 @@ export default function KpiDashboardPage() {
   }, [])
 
   const c1 = chart1 ? { ...chart1, data: chart1Data ?? [] } : null
-  const c2 = chart2 ? { ...chart2, data: chart2Data ?? [], xLabels: (chart2Data ?? []).map((r: any) => String(r[chart2.xField] ?? '')), series: (chart2.series ?? []).map((s: any) => ({ ...s, values: (chart2Data ?? []).map((r: any) => Number(r[s.field] ?? 0)) })) } : null
+  const c2 = chart2 ? { ...chart2, data: chart2Data ?? [], xLabels: (chart2Data ?? []).map((r: any) => String(r[chart2.xField] ?? '')), series: (chart2.series ?? []).map((s: any) => ({ ...s, values: (chart2Data ?? []).map((r: any) => { const v = r[s.field]; return v != null && v !== '' ? Number(v) : null }) })) } : null
 
   const s = {
     page:     { padding: 24, display: 'flex', flexDirection: 'column' as const, gap: 20, background: '#F8FAFC', minHeight: '100%' },
     card:     { background: '#fff', borderRadius: 12, border: '1px solid #E5E7EB', padding: '20px 24px' },
     heading:  { fontSize: 26, fontWeight: 700, color: '#0D1B2A', margin: 0 },
-    kpiRow:   { display: 'flex', gap: 16, flexWrap: 'wrap' as const },
-    kpiCard:  { flex: '1 1 160px', background: '#fff', borderRadius: 10, border: '1px solid #E5E7EB', padding: '16px 20px' },
+    kpiRow:   { display: 'flex', gap: 12, flexWrap: 'wrap' as const },
+    kpiCard:  { flex: '1 1 140px', background: '#fff', borderRadius: 10, border: '1px solid #E5E7EB', padding: '16px 20px' },
     kpiLbl:   { fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase' as const, letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 6 },
     kpiVal:   { fontSize: 28, fontWeight: 700, color: '#0D1B2A', margin: '6px 0 4px' },
     chartRow: { display: 'flex', gap: 16 },

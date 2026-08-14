@@ -12,6 +12,7 @@ import * as d3 from 'd3'
 import * as topojson from 'topojson-client'
 import usaTopo from 'us-atlas/states-10m.json'
 import { config } from '../config/UsaMap.config'
+import { ExportToolbar } from '../components/ExportToolbar'
 
 const _API = (import.meta as any).env?.BASE_URL?.replace(/\/$/, '') || ''
 
@@ -325,14 +326,22 @@ export default function UsaMapPage() {
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#374151' }}>
               {selectedState ? `${selectedState.charAt(0).toUpperCase() + selectedState.slice(1)} — Selected` : 'Top 10 States'}
             </h3>
-            {selectedState && (
-              <button
-                onClick={() => setSelectedState(null)}
-                style={{ fontSize: 12, color: '#0064D2', background: 'none', border: '1px solid #0064D2', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontWeight: 500 }}
-              >
-                ✕ Clear selection
-              </button>
-            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {selectedState && (
+                <button
+                  onClick={() => setSelectedState(null)}
+                  style={{ fontSize: 12, color: '#0064D2', background: 'none', border: '1px solid #0064D2', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontWeight: 500 }}
+                >
+                  ✕ Clear selection
+                </button>
+              )}
+              <ExportToolbar
+                data={top10.map((r: any, i: number) => ({ '#': i + 1, State: r.name, [valueField]: r.val }))}
+                columns={[{ key: '#', header: '#' }, { key: 'State', header: 'State' }, { key: valueField, header: valueField }]}
+                title={(config as any).title ?? 'State Data'}
+                filename="state-data"
+              />
+            </div>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>

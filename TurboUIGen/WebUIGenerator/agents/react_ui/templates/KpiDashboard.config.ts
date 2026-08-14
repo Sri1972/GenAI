@@ -7,13 +7,17 @@
 export const config = {
   pageTitle: '{{PAGE_TITLE}}',
 
-  // KPI summary cards — 4 recommended (static values computed from data)
-  kpiCards: [
-    { label: '{{KPI_1_LABEL}}', value: '{{KPI_1_VALUE}}', change: '{{KPI_1_CHANGE}}', direction: '{{KPI_1_DIR}}' as 'up'|'down'|'neutral', icon: '{{KPI_1_ICON}}' },
-    { label: '{{KPI_2_LABEL}}', value: '{{KPI_2_VALUE}}', change: '{{KPI_2_CHANGE}}', direction: '{{KPI_2_DIR}}' as 'up'|'down'|'neutral', icon: '{{KPI_2_ICON}}' },
-    { label: '{{KPI_3_LABEL}}', value: '{{KPI_3_VALUE}}', change: '{{KPI_3_CHANGE}}', direction: '{{KPI_3_DIR}}' as 'up'|'down'|'neutral', icon: '{{KPI_3_ICON}}' },
-    { label: '{{KPI_4_LABEL}}', value: '{{KPI_4_VALUE}}', change: '{{KPI_4_CHANGE}}', direction: '{{KPI_4_DIR}}' as 'up'|'down'|'neutral', icon: '{{KPI_4_ICON}}' },
-  ],
+  // KPI summary cards — fetched from API at runtime
+  // Option A: fetch from a dedicated KPI table (set kpiTableName)
+  // Option B: static values (set kpiCards array directly)
+  kpiTableName: '{{KPI_TABLE}}' as string | null,  // e.g. 'kpis' — set to null if using static kpiCards
+  kpiMapping: {
+    label: '{{KPI_LABEL_FIELD}}',       // e.g. 'metric'
+    value: '{{KPI_VALUE_FIELD}}',       // e.g. 'value'
+    change: '{{KPI_CHANGE_FIELD}}',     // e.g. 'change_pct'
+    direction: '{{KPI_DIR_FIELD}}',     // e.g. 'direction'
+  },
+  kpiCards: null as any[] | null,       // null = fetch from kpiTableName; or provide static array
 
   // Left chart — 'bar' or 'donut'
   chart1: {

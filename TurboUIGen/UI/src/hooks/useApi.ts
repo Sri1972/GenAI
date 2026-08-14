@@ -9,15 +9,33 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return data as T
 }
 
+export interface DraftResult {
+  architecture: Record<string, any>
+  markdown: string
+  projectName: string
+  title: string
+  pageCount: number
+}
+
 export const api = {
   listProjects: () =>
     request<Project[]>('/api/projects'),
 
-  generate: (prompt: string, projectName?: string, figmaUrl?: string, instructions?: string) =>
+  draft: (prompt: string, projectName?: string, instructions?: string) =>
+    request<DraftResult>('/api/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, project_name: projectName || null, instructions: instructions || '' }),
+    }),
+
+  getDraft: (projectName: string) =>
+    request<DraftResult | null>(`/api/projects/${projectName}/draft`),
+
+  generate: (prompt: string, projectName?: string, figmaUrl?: string, instructions?: string, architecture?: Record<string, any>) =>
     request<GenerateResult>('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, project_name: projectName, figma_url: figmaUrl || null, instructions: instructions || '' }),
+      body: JSON.stringify({ prompt, project_name: projectName, figma_url: figmaUrl || null, instructions: instructions || '', architecture: architecture || null }),
     }),
 
   createProject: (name: string) =>
@@ -36,11 +54,11 @@ export const api = {
   delete: (name: string) =>
     request<{ deleted: string }>(`/api/delete/${name}`, { method: 'DELETE' }),
 
-  refine: (projectName: string, prompt: string, comment?: string, instructions?: string) =>
+  refine: (projectName: string, prompt: string, comment?: string, instructions?: string, architecture?: Record<string, any>) =>
     request<GenerateResult>(`/api/refine/${projectName}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, project_name: projectName, comment: comment || '', instructions: instructions || '' }),
+      body: JSON.stringify({ prompt, project_name: projectName, comment: comment || '', instructions: instructions || '', architecture: architecture || null }),
     }),
 
   getHistory: (name: string) =>

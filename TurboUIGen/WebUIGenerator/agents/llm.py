@@ -1,6 +1,6 @@
 """
-LLM client — LiteLLM proxy (OpenAI-compatible)
-Provides a drop-in replacement for the AWS Bedrock client used throughout TurboUIGen.
+LLM client — LiteLLM proxy (primary) with AWS Bedrock fallback.
+All LLM calls in TurboUIGen flow through chat() / chat_json() here.
 """
 
 import json
@@ -11,18 +11,29 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from openai import OpenAI
+from openai import OpenAI, InternalServerError, APIStatusError, APIConnectionError, APITimeoutError
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
+# ── Primary: LiteLLM proxy ───────────────────────────────────────────────────
 LITELLM_API_BASE = os.environ.get("LITELLM_API_BASE", "")
 LITELLM_API_KEY  = os.environ.get("LITELLM_API_KEY", "")
 LITELLM_SSL_CERT = os.environ.get("LITELLM_SSL_CERT", "")
 LITELLM_TIMEOUT  = int(os.environ.get("LITELLM_TIMEOUT", "600"))
 MODEL_ID         = os.environ.get("LITELLM_SONNET_46_MODEL", "claude-sonnet-4-6")
 
+# ── Fallback: AWS Bedrock ────────────────────────────────────────────────────
+BEDROCK_MODEL_ID = os.environ.get(
+    "BEDROCK_MODEL_ID",
+    "arn:aws:bedrock:us-east-1:992382856886:application-inference-profile/ighsdreux5fs",
+)
+BEDROCK_REGION   = os.environ.get("AWS_REGION", "us-east-1")
+BEDROCK_PROFILE  = os.environ.get("AWS_PROFILE", "default")
+
 _client: Optional[OpenAI] = None
+_bedrock_client = None
+_using_fallback = False  # tracks whether we've switched to Bedrock this session
 
 # ── Token usage tracking (delegated to shared token_tracker module) ───────────
 import token_tracker
@@ -83,26 +94,113 @@ def _get_client() -> OpenAI:
     return _client
 
 
+def _get_bedrock_client():
+    """Lazy-init Bedrock client using the anthropic SDK's native Bedrock support."""
+    global _bedrock_client
+    if _bedrock_client is None:
+        from anthropic import AnthropicBedrock
+        _bedrock_client = AnthropicBedrock(
+            aws_profile=BEDROCK_PROFILE,
+            aws_region=BEDROCK_REGION,
+            timeout=httpx.Timeout(
+                connect=30.0,
+                read=float(LITELLM_TIMEOUT),
+                write=60.0,
+                pool=30.0,
+            ),
+        )
+    return _bedrock_client
+
+
+def _call_bedrock(
+    messages: list[dict],
+    system: str = "",
+    max_tokens: int = 32000,
+    json_mode: bool = False,
+) -> str:
+    """Call Claude on Bedrock via the Anthropic SDK (streaming to avoid timeouts)."""
+    client = _get_bedrock_client()
+
+    system_content = system
+    if json_mode and system:
+        system_content = system + "\n\nIMPORTANT: Respond with ONLY valid JSON. No markdown, no explanation."
+    elif json_mode:
+        system_content = "Respond with ONLY valid JSON. No markdown, no explanation."
+
+    # Convert OpenAI-style messages to Anthropic format
+    anthropic_messages = []
+    for msg in messages:
+        role = msg["role"]
+        if role == "system":
+            system_content = (system_content + "\n\n" + msg["content"]) if system_content else msg["content"]
+            continue
+        content = msg["content"]
+        if isinstance(content, str):
+            anthropic_messages.append({"role": role, "content": content})
+        elif isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append({"type": "text", "text": item})
+                elif isinstance(item, dict):
+                    if item.get("type") == "text":
+                        parts.append({"type": "text", "text": item["text"]})
+                    elif item.get("type") == "image_url":
+                        url = item["image_url"]["url"]
+                        if url.startswith("data:image/png;base64,"):
+                            b64_data = url.split(",", 1)[1]
+                            parts.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": b64_data,
+                                },
+                            })
+            anthropic_messages.append({"role": role, "content": parts})
+
+    kwargs = {
+        "model": BEDROCK_MODEL_ID,
+        "messages": anthropic_messages,
+        "max_tokens": max_tokens,
+    }
+    if system_content:
+        kwargs["system"] = system_content
+
+    # Use streaming to avoid read timeouts on large responses
+    chunks = []
+    with client.messages.stream(**kwargs) as stream:
+        for text in stream.text_stream:
+            chunks.append(text)
+
+    # Get final message for usage stats
+    response = stream.get_final_message()
+    run_id = _get_current_run_id()
+    _record_usage(
+        run_id,
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+    )
+
+    return "".join(chunks)
+
+
 def chat(
     messages: list[dict],
     system: str = "",
     max_tokens: int = 32000,
-    temperature: float = 0.2,  # kept for call-site compatibility, not sent to Claude 4+
+    temperature: float = 0.2,
     json_mode: bool = False,
 ) -> str:
     """
-    Call Claude via LiteLLM proxy and return the text response.
-
-    Args:
-        messages:    List of {"role": "user"|"assistant", "content": str|list}
-        system:      System prompt string
-        max_tokens:  Max completion tokens
-        temperature: Kept for call-site compatibility
-        json_mode:   If True, instructs Claude to return valid JSON only
-
-    Returns:
-        Response text string
+    Call Claude via LiteLLM proxy (primary) with Bedrock fallback.
+    Falls back to Bedrock if LiteLLM is unavailable after retries.
+    Once fallback is activated, all subsequent calls go directly to Bedrock.
     """
+    global _using_fallback, _client
+    if _using_fallback:
+        return _call_bedrock(messages, system=system, max_tokens=max_tokens, json_mode=json_mode)
+
     client = _get_client()
 
     # Build system prompt
@@ -127,9 +225,13 @@ def chat(
         httpx.ConnectError,
         httpx.ConnectTimeout,
         httpx.CloseError,
+        InternalServerError,
+        APIConnectionError,
+        APITimeoutError,
     )
 
     max_retries = 3
+    last_error = None
     for attempt in range(max_retries):
         try:
             stream = client.chat.completions.create(
@@ -164,19 +266,33 @@ def chat(
             return "".join(chunks)
 
         except _RETRYABLE as e:
-            # Reset the client to force a fresh connection on retry
-            global _client
+            last_error = e
             _client = None
             if attempt < max_retries - 1:
                 wait = 3 * (attempt + 1)
-                print(f"[llm.chat] Stream interrupted ({type(e).__name__}), retrying in {wait}s (attempt {attempt+1}/{max_retries})...", flush=True)
+                print(f"[llm.chat] LiteLLM failed ({type(e).__name__}), retrying in {wait}s (attempt {attempt+1}/{max_retries})...", flush=True)
                 _time.sleep(wait)
                 client = _get_client()
             else:
-                raise RuntimeError(
-                    f"LLM stream failed after {max_retries} attempts: {e}. "
-                    "The LiteLLM proxy may be overloaded or the request is too large."
-                ) from e
+                _using_fallback = True
+                print(
+                    f"\n{'='*60}\n"
+                    f"[FALLBACK] LiteLLM proxy unavailable after {max_retries} retries.\n"
+                    f"           Switching to AWS Bedrock ({BEDROCK_MODEL_ID}).\n"
+                    f"           Last error: {last_error}\n"
+                    f"{'='*60}\n",
+                    flush=True,
+                )
+
+    # ── Fallback to Bedrock ──────────────────────────────────────────────────
+    try:
+        return _call_bedrock(messages, system=system, max_tokens=max_tokens, json_mode=json_mode)
+    except Exception as bedrock_err:
+        raise RuntimeError(
+            f"Both LiteLLM and Bedrock failed.\n"
+            f"  LiteLLM error: {last_error}\n"
+            f"  Bedrock error: {bedrock_err}"
+        ) from bedrock_err
 
 
 def chat_json(
@@ -217,21 +333,13 @@ def chat_json(
             print(f"[chat_json] attempt {attempt+1}: JSON parse error: {e}", flush=True)
             print(f"[chat_json] raw response (first 500 chars): {text[:500]}", flush=True)
             if attempt == 0:
-                # Detect truncation (response ends mid-string) vs other parse errors.
-                # Truncation: the model hit max_tokens mid-response.
-                # Strategy: send the truncated text back as the assistant turn and ask
-                # the model to complete the JSON from exactly where it stopped.
                 is_truncation = (
                     "Unterminated string" in str(e)
                     or "Expecting" in str(e)
-                    or len(text) > max_tokens * 2  # rough heuristic
+                    or len(text) > max_tokens * 2
                 )
                 if is_truncation:
                     print("[chat_json] detected truncated JSON — asking model to continue", flush=True)
-                    # Guard: if the truncated text is already very large (>100k chars),
-                    # sending it back as context will exceed Bedrock's input limit and return
-                    # an empty response.  In that case, skip the continuation attempt and
-                    # let the caller's two-pass fallback handle it.
                     if len(text) > 100_000:
                         print(
                             f"[chat_json] truncated text too large ({len(text)} chars) for continuation — "
@@ -258,7 +366,7 @@ def chat_json(
                         system=system,
                         max_tokens=max_tokens,
                         temperature=temperature,
-                        json_mode=False,  # continuation is raw text, not a fresh JSON call
+                        json_mode=False,
                     ).strip()
                     if not continuation:
                         print("[chat_json] continuation returned empty — raising for two-pass fallback", flush=True)
@@ -267,13 +375,11 @@ def chat_json(
                             f"(likely context-window overflow). Switching to two-pass generation."
                         ) from e
                     merged = text + continuation
-                    # Strip any trailing markdown fence the model may have added
                     if merged.rstrip().endswith("```"):
                         merged = merged.rstrip()[:-3].rstrip()
                     try:
                         return json.loads(merged)
                     except json.JSONDecodeError as e2:
-                        # Try fixing invalid escape sequences in merged text
                         if "Invalid \\escape" in str(e2) or "invalid escape" in str(e2).lower():
                             import re as _re_esc2
                             fixed_merged = _re_esc2.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', merged)
@@ -287,7 +393,6 @@ def chat_json(
                             f"Last error: {e2}. Switching to two-pass generation."
                         ) from e2
                 else:
-                    # Not truncation — ask model to re-emit valid JSON
                     messages = messages + [
                         {"role": "assistant", "content": text},
                         {"role": "user", "content": (

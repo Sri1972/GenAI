@@ -102,6 +102,11 @@ _STATIC_CHECKS: list[tuple[str, Severity, str, str]] = [
     ("data-safety",  "warning", r"props\.\w+\.map\(",
      "Calling .map() directly on a prop without null-guard — may crash if prop is undefined"),
 
+    # Calling .map() on a state object that wraps an array (common LLM bug)
+    ("map-on-object","error",
+     r"\{diff\s*\?\s*\([^)]*diff\.map\(",
+     "diff.map() called on state object — should be diff.diff.map() to access the nested array"),
+
     # Hardcoded data in component (not in data/)
     ("data-location","warning", r"const\s+\w+\s*=\s*\[\s*\{[^}]{80,}",
      "Large inline data array in component — move to src/data/*.json"),
@@ -184,6 +189,47 @@ def _check_app_tsx(content: str, main_content: str = "") -> list[QAFinding]:
     if "mobility-global-ds" not in content:
         findings.append(QAFinding("warning", "ds-usage", "src/App.tsx",
                                   "App.tsx does not import from mobility-global-ds — Header/Sidebar may be hand-rolled"))
+    return findings
+
+
+# ── Table name validation ─────────────────────────────────────────────────────
+
+def _check_table_names(project_dir: Path) -> list[QAFinding]:
+    """Validate useApi/apiAggregate table names against schema.sql."""
+    findings: list[QAFinding] = []
+    schema_path = project_dir / "api" / "schema.sql"
+    if not schema_path.exists():
+        schema_path = project_dir / "schema.sql"
+    if not schema_path.exists():
+        return findings
+
+    schema_content = schema_path.read_text(encoding="utf-8", errors="ignore")
+    table_names = set(
+        t.lower() for t in re.findall(
+            r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", schema_content, re.IGNORECASE
+        )
+    )
+    if not table_names:
+        return findings
+
+    call_pattern = re.compile(r"""(?:useApi|apiAggregate)(?:<[^>]*>)?\s*\(\s*['"](\w+)['"]""")
+
+    for fpath in project_dir.rglob("*.tsx"):
+        if "node_modules" in fpath.parts:
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for m in call_pattern.finditer(content):
+            table_arg = m.group(1)
+            if table_arg.lower() not in table_names:
+                rel = str(fpath.relative_to(project_dir)).replace("\\", "/")
+                findings.append(QAFinding(
+                    "error", "table-name", rel,
+                    f"useApi/apiAggregate references table '{table_arg}' which does not exist in schema.sql. "
+                    f"Available tables: {sorted(table_names)}"
+                ))
     return findings
 
 
@@ -458,12 +504,19 @@ def run_qa(project_name: str, port: int, project_dir: Path) -> QAReport:
     required_files = [
         "index.html", "package.json", "vite.config.ts",
         "src/main.tsx", "src/App.tsx", "src/types.ts",
-        "src/data/index.ts",
     ]
     for rf in required_files:
         if not (project_dir / rf).exists():
             findings.append(QAFinding("error", "completeness", rf,
                                       f"Required file missing: {rf}"))
+
+    # Data source: either src/data/index.ts (inline data) or api/ (API-based)
+    has_data_file = (project_dir / "src" / "data" / "index.ts").exists()
+    has_api_server = (project_dir / "api" / "app_server.py").exists() or \
+                     (project_dir / "api" / "schema.sql").exists()
+    if not has_data_file and not has_api_server:
+        findings.append(QAFinding("error", "completeness", "src/data/index.ts",
+                                  "No data source found: need src/data/index.ts or api/schema.sql"))
 
     pages_dir = src_dir / "pages"
     if pages_dir.exists():
@@ -473,6 +526,12 @@ def run_qa(project_name: str, port: int, project_dir: Path) -> QAReport:
     else:
         findings.append(QAFinding("warning", "completeness", "src/pages/",
                                   "src/pages/ directory missing"))
+
+    # ── 3b. Table name validation against schema.sql ────────────────────────
+    table_findings = _check_table_names(project_dir)
+    if table_findings:
+        print(f"[QA] Table name mismatches: {len(table_findings)} error(s)", flush=True)
+    findings.extend(table_findings)
 
     # ── 4. TypeScript compilation ─────────────────────────────────────────────
     print("[QA] Running tsc --noEmit…", flush=True)

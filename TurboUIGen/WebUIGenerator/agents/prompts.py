@@ -102,7 +102,7 @@ Return ONLY a JSON object with this structure:
     "src/index.css": "...full file content...",
     "src/App.tsx": "...full file content...",
     "src/types.ts": "...full file content...",
-    "src/pages/Dashboard.tsx": "...full file content...",
+    "src/pages/PageName.tsx": "...full file content (one per page from architecture)...",
     "schema.sql": "CREATE TABLE + column defs...",
     "seed.sql": "INSERT INTO with realistic data..."
   }
@@ -148,7 +148,7 @@ COMPONENT API — exact props (copy these exactly):
 
   SearchBar    placeholder value fullWidth onSearch onChange
                onChange receives a string (NOT a React event). CORRECT: onChange={v => setQ(v)}  WRONG: onChange={e => e.target.value}
-               Example: <SearchBar placeholder="Search vehicles..." value={q} onChange={v => setQ(v)} onSearch={setQ} />
+               Example: <SearchBar placeholder="Search..." value={q} onChange={v => setQ(v)} onSearch={setQ} />
 
   Badge        label variant:'default'|'success'|'warning'|'error'|'info'|'accent'  size dot
                Example: <Badge label="Active" variant="success" />
@@ -161,7 +161,7 @@ COMPONENT API — exact props (copy these exactly):
                Example: <KpiCard label="Revenue" value="2.4M" prefix="$" change="+12%" changeType="positive" />
 
   Header       brandName logo nav:[{label,active}] actions onNavClick
-               Example: <Header brandName="AutoPortal" nav={navItems} actions={<Button size="sm">Logout</Button>} onNavClick={handleNav} />
+               Example: <Header brandName="Your App Name" actions={<Button size="sm">Sign Out</Button>} />
 
   Sidebar      theme:'light'|'dark'  items:[{label,icon,active,badge,onClick,subItems}]
                sections:[{heading,items}]  footer collapsed
@@ -175,12 +175,12 @@ COMPONENT API — exact props (copy these exactly):
                    </svg>
                  )
                  <Sidebar theme="dark" items={[
-                   { label:'Dashboard', icon:<IconHome/>, active:true,  onClick:()=>navigate('/') },
-                   { label:'Inventory', icon:<IconCar/>,  active:false, onClick:()=>navigate('/inventory') },
+                   { label:'Page One', icon:<IconHome/>, active:pathname==='/page-one',  onClick:()=>navigate('/page-one') },
+                   { label:'Page Two', icon:<IconCar/>,  active:pathname==='/page-two', onClick:()=>navigate('/page-two') },
                  ]} />
 
   Footer       brand links:[{label,href}] variant:'light'|'dark'
-               Example: <Footer brand="AutoPortal" links={[{label:'Privacy',href:'#'},{label:'Terms',href:'#'}]} />
+               Example: <Footer brand="App Name" links={[{label:'Privacy',href:'#'},{label:'Terms',href:'#'}]} />
 
   Modal        open title size:'sm'|'md'|'lg'|'xl'  footer onClose
                Example: <Modal open={showModal} title="Add Vehicle" onClose={()=>setShowModal(false)} footer={<Button onClick={handleAdd}>Add</Button>}>...</Modal>
@@ -197,7 +197,7 @@ COMPONENT API — exact props (copy these exactly):
                      { key:'status', header:'Status', render:(v)=><Badge label={String(v)} variant={v==='Active'?'success':'default'} /> },
                      { key:'price',  header:'Price',  align:'right', render:(v)=>`$${Number(v).toLocaleString()}` },
                    ]}
-                   rows={vehicles}
+                   rows={data}
                    striped
                  />
 
@@ -205,10 +205,10 @@ COMPONENT API — exact props (copy these exactly):
                Example: <Tabs defaultKey="overview" variant="line" items={[{key:'overview',label:'Overview',content:<OverviewPanel/>},{key:'details',label:'Details',content:<DetailsPanel/>}]} />
 
   Pagination   total page pageSize onChange
-               Example: <Pagination total={vehicles.length} page={page} pageSize={20} onChange={setPage} />
+               Example: <Pagination total={data.length} page={page} pageSize={20} onChange={setPage} />
 
   ProgressBar  value max variant:'default'|'success'|'warning'|'error'  size:'sm'|'md'|'lg'  label showValue animated
-               Example: <ProgressBar value={65} max={100} variant="success" size="md" label="Sales Target" showValue />
+               Example: <ProgressBar value={65} max={100} variant="success" size="md" label="Progress" showValue />
 
   Avatar       name src size:'xs'|'sm'|'md'|'lg'|'xl'  shape:'circle'|'square'  status:'online'|'offline'|'busy'|'away'
                Example: <Avatar name="John Smith" size="md" status="online" />
@@ -220,80 +220,39 @@ COMPONENT API — exact props (copy these exactly):
                Example: <Tooltip content="View full report" placement="top"><Button variant="ghost" size="sm">...</Button></Tooltip>
 
   Breadcrumb   items:[{label,onClick}] separator
-               Example: <Breadcrumb items={[{label:'Home',onClick:()=>navigate('/')},{label:'Inventory'}]} />
+               Example: <Breadcrumb items={[{label:'Home',onClick:()=>navigate('/')},{label:'Current Page'}]} />
 
-COMPLETE APP SHELL PATTERN — copy this structure for every app:
+APP SHELL LAYOUT — use this exact structure (pages/icons/names come from the architecture):
+⚠️  The Sidebar is a FLEX CHILD (240px auto). DO NOT use position:fixed, marginLeft, or style/open props on it.
 
-  // src/App.tsx
-  import { useState } from 'react'
-  import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
-  import { Header, Sidebar, Footer, Button } from 'mobility-global-ds'
-  import Dashboard from './pages/Dashboard'
-  import Inventory from './pages/Inventory'
+  // src/App.tsx structure (page names/icons are decided by the architecture agent — NOT hardcoded):
+  import { lazy, Suspense } from 'react'
+  import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+  import { Header, Sidebar } from 'mobility-global-ds'
 
-  const IconGrid = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-  const IconList = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+  // React.lazy for EVERY page (names come from architecture)
+  // Icons: inline SVG (16x16, stroke="currentColor") — pick icons that match each page's purpose
 
   export default function App() {
     const navigate = useNavigate()
     const { pathname } = useLocation()
 
-    const sidebarItems = [
-      { label: 'Dashboard', icon: <IconGrid />, active: pathname === '/',          onClick: () => navigate('/') },
-      { label: 'Inventory', icon: <IconList />, active: pathname === '/inventory', onClick: () => navigate('/inventory') },
-    ]
+    // Build sidebarItems from a static NAV_ITEMS array:
+    // { label, icon: <SvgIcon />, active: pathname.startsWith(path), onClick: () => navigate(path) }
 
     return (
       <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh' }}>
-        <Header brandName="AutoPortal" actions={<Button size="sm" variant="secondary">Sign Out</Button>} />
+        <Header brandName="APP_NAME_FROM_REQUIREMENTS" />
         <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
           <Sidebar theme="dark" items={sidebarItems} />
-          <main style={{ flex:1, overflowY:'auto', background:'#EFEFE5', padding:24 }}>
-            <Routes>
-              <Route path="/"          element={<Dashboard />} />
-              <Route path="/inventory" element={<Inventory />} />
-            </Routes>
+          <main style={{ flex:1, overflowY:'auto', padding:16 }}>
+            <Suspense fallback={<div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:400}}>Loading…</div>}>
+              <Routes>
+                {/* One Route per page from architecture. Default redirect to first page. */}
+              </Routes>
+            </Suspense>
           </main>
         </div>
-        <Footer brand="AutoPortal" links={[{label:'Privacy',href:'#'},{label:'Terms',href:'#'}]} />
-      </div>
-    )
-  }
-
-  // src/pages/Dashboard.tsx — example page using DS components
-  import { KpiCard, Card, DataTable, Badge, Breadcrumb, Alert } from 'mobility-global-ds'
-  import { kpiData, recentSales } from '../data'
-  import { useNavigate } from 'react-router-dom'
-
-  export default function Dashboard() {
-    const navigate = useNavigate()
-    return (
-      <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
-        <Breadcrumb items={[{label:'Dashboard'}]} />
-
-        <Alert variant="info" title="Welcome" message="Q2 sales targets updated. Check the forecast tab." dismissible />
-
-        {/* KPI row */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:16 }}>
-          <KpiCard label="Total Revenue"  value="4.2M"  prefix="$" change="+8.3%"  changeType="positive" />
-          <KpiCard label="Units Sold"     value="1,847"             change="+5.1%"  changeType="positive" />
-          <KpiCard label="Avg Deal Size"  value="22,740" prefix="$" change="-2.0%"  changeType="negative" />
-          <KpiCard label="Active Dealers" value="38"                change="steady" changeType="neutral"  />
-        </div>
-
-        {/* Data table */}
-        <Card title="Recent Sales" elevation="sm">
-          <DataTable
-            columns={[
-              { key:'vehicle',  header:'Vehicle',  width:220 },
-              { key:'dealer',   header:'Dealer',   width:180 },
-              { key:'status',   header:'Status',   render:(v)=><Badge label={String(v)} variant={v==='Delivered'?'success':v==='Pending'?'warning':'default'} /> },
-              { key:'amount',   header:'Amount',   align:'right', render:(v)=>`$${Number(v).toLocaleString()}` },
-            ]}
-            rows={recentSales}
-            striped
-          />
-        </Card>
       </div>
     )
   }
@@ -1070,7 +1029,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 )
 
 IMPORTANT: The 'mobility-global-ds' alias is pre-configured in vite.config.ts by the build system.
-You do NOT need to add it to package.json. Just import from it as shown above.
+NEVER add "mobility-global-ds" to package.json (not in dependencies, not in devDependencies).
+It is NOT an npm package — it is resolved via the vite alias at build time. Adding it causes npm E404 errors.
 """ + _brand_section()
 
 
@@ -1099,7 +1059,7 @@ Return ONLY a JSON object with this exact structure:
   "projectName": "kebab-case-name",
   "title": "Human Readable Title",
   "description": "What this app does",
-  "pages": ["Dashboard", "SalesChart", "ExportPdf", ...],
+  "pages": ["PageOne", "PageTwo", "PageThree", ...],
   "sharedComponents": [],
   "files": {
     "index.html": "...",
@@ -1123,9 +1083,9 @@ CRITICAL RULES for PASS 1:
 1. Include ALL config files, schema.sql, seed.sql, ALL utility files, types.ts, and App.tsx.
 2. src/App.tsx: use React.lazy + Suspense for every page import. Include all routes.
    The BrowserRouter is in src/main.tsx — App.tsx must NOT wrap with BrowserRouter again.
-   Example:
-     const Dashboard = lazy(() => import('./pages/Dashboard'))
-     <Route path="/" element={<Suspense fallback={<div>Loading…</div>}><Dashboard /></Suspense>} />
+   Example (use actual page names from requirements):
+     const MyPage = lazy(() => import('./pages/MyPage'))
+     <Route path="/my-page" element={<Suspense fallback={<div>Loading…</div>}><MyPage /></Suspense>} />
 3. "pages" array: every page name exactly as it will be in src/pages/<Name>.tsx
 4. "sharedComponents" array: ONLY list components that are genuinely custom and reused across
    multiple pages (e.g. a bespoke KPI widget). Do NOT list maps or charts here — those are
@@ -1163,11 +1123,11 @@ DO NOT generate src/data/*.json or src/data/index.ts. Instead generate:
 
 12. Pages fetch data via the useApi hook — NOT from static imports. Example:
     ```
-    import { useApi, apiAggregate } from '../hooks/useApi'
-    function SalesPage() {
-      const { data: sales, loading } = useApi<Sale>('sales', { sort: 'revenue', order: 'desc' })
+    import { useApi } from '../hooks/useApi'
+    function MyPage() {
+      const { data: rows, loading } = useApi<MyRow[]>('table_name', { sort: 'column', order: 'desc' })
       if (loading) return <Spinner />
-      return <DataGrid data={sales} ... />
+      return <div>...</div>
     }
     ```
 
@@ -1188,51 +1148,15 @@ DO NOT generate src/data/*.json or src/data/index.ts. Instead generate:
    FORBIDDEN: d3.json('https://...')             ← NEVER
    FORBIDDEN: fetch('https://...')               ← NEVER
 
-SKILL SYSTEM — READ CAREFULLY:
-The system has pre-built skill templates for common page types. When you name a page, the
-generator automatically detects it and uses the pre-built template instead of generating code.
-The skill system handles: data grids/tables, charts (all D3 types), world maps, USA maps,
-KPI dashboards, PowerPoint export, Excel/CSV export, PDF export, AI chat, and card grids.
-
-CHARTS SKILL supports ALL these chartType values — pick the right one per page:
-  'bar'         — vertical/horizontal bar  (labelField, valueField)
-  'stacked-bar' — stacked bars per group   (series[], groupKey)
-  'line'        — multi-line time-series   (xField, series[])
-  'donut'/'pie' — donut / pie with legend  (labelField, valueField)
-  'area'        — layered or stacked area  (xField, series[], stacked)
-  'grouped-bar' — grouped bars per group  (series[], groupKey)
-  'scatter'     — scatter plot             (xField, yField, optional series[])
-  'bubble'      — sized scatter circles   (xField, yField, sizeField)
-  'histogram'   — frequency distribution  (valueField, bins)
-  'heatmap'     — matrix / calendar       (xField, yField, valueField)
-  'treemap'     — rectangular hierarchy   (labelField, valueField, optional groupField)
-  'radar'       — spider / radar chart    (axes[], series[{label,color,values[]}])
-  'waterfall'   — bridge / P&L waterfall  (labelField, valueField, isTotal flag)
-  'multi'       — grid of mixed panels    (charts[] — any of the above per panel)
-
-YOUR JOB: Name pages to match the skill they need. Examples:
-- A page showing a table of data    → name it "DataGrid", "SalesGrid", "InventoryTable", etc.
-- A page with bar/line/trend charts → name it "SalesChart", "RevenueChart", "TrendChart", etc.
-- A page with donut/pie charts      → name it "ShareChart", "CompositionChart", "DonutChart", etc.
-- A page with scatter/bubble charts → name it "ScatterChart", "BubbleChart", "CorrelationChart", etc.
-- A radar/spider chart              → name it "RadarChart", "SkillRadar", "SpiderChart", etc.
-- A waterfall / P&L bridge chart    → name it "WaterfallChart", "BridgeChart", "PLChart", etc.
-- A heatmap / activity matrix       → name it "HeatmapChart", "ActivityMatrix", "CalendarChart", etc.
-- A treemap / hierarchy breakdown   → name it "TreemapChart", "BreakdownChart", "HierarchyChart", etc.
-- Multi-chart analytics page        → name it "Analytics", "AnalyticsChart", "MultiChart", etc.
-- A world/global map page           → name it "WorldMap", "GlobalMap", "CountryMap", etc.
-- A US state choropleth map         → name it "UsaMap", "StateMap", "NorthAmericaMap", etc.
-- KPIs + summary stats              → name it "KpiDashboard", "ExecutiveDashboard", "Overview", etc.
-- Export to PowerPoint              → name it "PptxExport", "SlideExport", "PresentationExport", etc.
-- Export to Excel/CSV               → name it "ExcelExport", "DataExport", "SpreadsheetExport", etc.
-- Export to PDF                     → name it "PdfExport", "ReportExport", "PrintExport", etc.
-- AI chat / assistant / concierge   → name it "AiChat", "Concierge", "Assistant", etc.
-- Card gallery / grid               → name it "CardGrid", "DealerCards", "ProductCards", etc.
+PAGE NAMING — name pages based on what they DO per the requirements:
+- Name pages descriptively based on the app's domain (e.g. "Portfolio", "Timesheets", "DocumentViewer")
+- Do NOT name pages after generic UI patterns (avoid "DataGrid", "KpiDashboard", "ChartPage")
+- The LLM generates each page from scratch based on requirements — there are no templates
 
 IMPORTANT — API-FIRST DATA:
-- Skill pages (charts, grids, etc.) get their data from the REST API via useApi hook.
-- The skill config references TABLE NAMES and COLUMN NAMES from your schema.sql.
-- Example: a chart skill config uses `tableName: 'sales'`, `labelField: 'region'`, `valueField: 'revenue'`
+- All pages get their data from the REST API via useApi hook.
+- Use TABLE NAMES and COLUMN NAMES from schema.sql.
+- Example: useApi<Row[]>('sales') fetches from /api/data/sales. Column names are snake_case.
 - The system auto-generates REST endpoints for every table in schema.sql.
 - DO NOT generate src/data/*.json or src/data/index.ts — all data lives in SQLite.
 """ + _brand_section()

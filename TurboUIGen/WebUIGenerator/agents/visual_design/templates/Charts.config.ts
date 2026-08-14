@@ -17,7 +17,19 @@
  *   'treemap'      — rectangular hierarchy (labelField, valueField, optional groupField)
  *   'radar'        — spider chart (axes[], series[{label,values[]}])
  *   'waterfall'    — bridge/waterfall (labelField, valueField, optional isTotal flag per row)
- *   'multi'        — grid of mixed panels (charts[] array — each entry is its own cfg)
+ *   'multi'        — grid or tabs of mixed panels (charts[] array — each entry is its own cfg)
+ *
+ * IMPORTANT RULES:
+ * 1. Line charts MUST have multiple series (one per dimension being compared).
+ *    E.g. "volume by top 5 brands" = 5 series entries, NOT 1 series with combined data.
+ * 2. Area charts with multiple dimensions MUST list all dimensions as separate series entries.
+ * 3. Tabs layout: use layout='tabs'. Each tab is ONE entry in charts[] and can itself contain
+ *    a nested charts[] array for showing multiple visualizations within that tab.
+ * 4. Data for charts: use computed/aggregated arrays derived from imported data.
+ *    Shape the data as one-row-per-x-value with a field for each series dimension.
+ *    Example for multi-line chart of 3 brands over 4 quarters:
+ *      data = [{quarter:'Q1', BrandA: 100, BrandB: 80, BrandC: 60}, ...]
+ *      series = [{field:'BrandA', label:'Brand A', color:...}, {field:'BrandB',...}, ...]
  */
 export const config = {
 
@@ -42,10 +54,14 @@ export const config = {
   centerLabel:  '{{CENTER_LABEL}}',  // donut: text in the hole
 
   // ── Line / Area shared ─────────────────────────────────────────────────────
+  // CRITICAL: Always include ALL dimensions as separate series entries.
+  // For a "top 5 makes" line chart, include 5 series — NOT 1.
   xField: '{{X_FIELD}}',             // x-axis data field (line, area, scatter, bubble)
   series: [
     { field: '{{SERIES_1_FIELD}}', label: '{{SERIES_1_LABEL}}', color: '{{SERIES_1_COLOR}}' },
-    // { field: '{{SERIES_2_FIELD}}', label: '{{SERIES_2_LABEL}}', color: '{{SERIES_2_COLOR}}' },
+    { field: '{{SERIES_2_FIELD}}', label: '{{SERIES_2_LABEL}}', color: '{{SERIES_2_COLOR}}' },
+    { field: '{{SERIES_3_FIELD}}', label: '{{SERIES_3_LABEL}}', color: '{{SERIES_3_COLOR}}' },
+    // Add more series as needed — one per line/area/bar group
   ] as Array<{ field: string; label: string; color: string }>,
   yFormat: '{{Y_FORMAT}}',
   stacked: {{STACKED}},              // area / stacked-bar: true = stacked layers
@@ -99,17 +115,37 @@ export const config = {
   // ── Multi-chart mode ───────────────────────────────────────────────────────
   // Only used when chartType = 'multi'. Each entry is a self-contained chart cfg.
   // layout: 'grid'  — 2-col auto-fit grid (default)
-  // layout: 'tabs'  — horizontal tab bar; one chart visible at a time (use when the spec says "tabs" or "two tabs")
-  // Each chart entry uses tableName to fetch its data from the API.
+  // layout: 'tabs'  — horizontal tab bar; one tab visible at a time
+  //
+  // TABS WITH MULTIPLE CHARTS PER TAB:
+  // When the spec says "Tab 1 has chart A and chart B", each tab entry should include
+  // a nested charts[] array. The renderer stacks them vertically within the tab panel.
+  //
+  // Example — 2 tabs, each with 2 charts:
+  // layout: 'tabs',
+  // charts: [
+  //   {
+  //     title: 'Volume',
+  //     charts: [
+  //       { type: 'line', title: 'Quarterly Volume by Brand', data: volumeData, xField: 'quarter',
+  //         series: [{field:'BrandA',label:'Brand A',color:'#0064D2'},{field:'BrandB',label:'Brand B',color:'#420E71'},{field:'BrandC',label:'Brand C',color:'#059669'}] },
+  //       { type: 'grouped-bar', title: 'Volume by Region', data: regionData, groupKey: 'quarter',
+  //         series: [{field:'East',label:'East',color:'#0064D2'},{field:'West',label:'West',color:'#D97706'}] },
+  //     ],
+  //   },
+  //   {
+  //     title: 'Revenue',
+  //     charts: [
+  //       { type: 'area', title: 'Revenue Over Time', data: revenueData, xField: 'quarter', stacked: true,
+  //         series: [{field:'Product',label:'Product',color:'#0064D2'},{field:'Services',label:'Services',color:'#059669'}] },
+  //       { type: 'bar', title: 'Top 10 Items', data: topItems, labelField: 'name', valueField: 'revenue', horizontal: true, valueFormat: '$,.0f' },
+  //     ],
+  //   },
+  // ],
   layout: 'grid' as 'grid' | 'tabs',
   charts: [
-    // Examples — each chart gets its own tableName and field references from schema.sql:
-    // { type: 'bar',          title: 'Revenue by Region',  tableName: 'sales', labelField: 'region',  valueField: 'revenue',  horizontal: true, valueFormat: '$,.0f' },
-    // { type: 'donut',        title: 'Market Share',       tableName: 'market_share', labelField: 'brand', valueField: 'share', valueFormat: '.1%', centerLabel: 'Share' },
-    // { type: 'line',         title: 'Monthly Trend',      tableName: 'monthly_sales', xField: 'month', series: [{field:'sales', label:'Sales', color:'#0064D2'}], yFormat: '$,.0f' },
-    // { type: 'scatter',      title: 'Price vs Volume',    tableName: 'trades', xField: 'price', yField: 'volume', labelField: 'ticker' },
-    // { type: 'stacked-bar',  title: 'Budget vs Actual',   tableName: 'budgets', groupKey: 'quarter', series: [{field:'budget',label:'Budget',color:'#94A3B8'},{field:'actual',label:'Actual',color:'#0064D2'}] },
-    // { type: 'radar',        title: 'Skill Matrix',       axes: ['Speed','Quality','Cost','Scale','Support'], series: [{label:'Team A', color:'#0064D2', values:[80,70,90,60,75]}] },
+    // Each chart entry gets its own type, data, and field config.
+    // For tabs: title becomes the tab label; nested charts[] shows multiple charts in that tab.
   ],
 
 } as const
