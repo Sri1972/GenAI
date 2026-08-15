@@ -1,0 +1,32 @@
+FINANCIAL SERVICES DOMAIN — WealthPulse
+========================================
+
+App Name: wealth-advisor
+Theme: Institutional wealth management, dark premium aesthetic
+Accent: #10B981 (emerald green — growth/positive returns)
+Dark mode: Yes
+
+PAGES:
+  1. Watchlist — Live portfolio feed with position cards, mini sparklines, donut chart
+  2. Trade Blotter — Trade activity ledger, daily bar chart (green/red), dense table
+  3. Risk Matrix — Bubble chart (volatility vs Sharpe), risk comparison table
+  4. Allocation Drift — Tornado/butterfly chart (target vs actual allocation)
+  5. AI Strategist — AI chat for portfolio queries
+  6. Analytics Lab — ADVANCED CHARTS showcase page (see below)
+
+CHART TYPES EXERCISED:
+  - Donut chart (sector allocation)
+  - Bubble chart (risk scatter — volatility vs Sharpe vs portfolio size)
+  - Bar chart (trade activity per day)
+  - Tornado/butterfly chart (allocation drift)
+  - Sparklines (position trend mini-charts)
+  - Radar chart (risk profile — Sharpe, Beta, Volatility, Concentration, Drawdown)
+  - Candlestick chart (price history for selected ticker)
+  - Waterfall chart (P&L attribution — what drove returns)
+  - Gauge chart (portfolio health score)
+  - Treemap (sector/ticker weight breakdown)
+
+DATA TABLES:
+  - positions (client holdings — ticker, asset_class, market_value, gain_loss)
+  - trades (trade log — action, ticker, shares, price, date, rationale)
+  - risk_metrics (per-client risk — Sharpe, VaR, beta, volatility)

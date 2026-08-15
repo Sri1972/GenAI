@@ -1,0 +1,16 @@
+TEST DOMAIN — QuickTest
+=========================
+
+App Name: QuickTest
+Theme: Minimal test app for pipeline validation
+Accent: #2563EB (blue-600)
+Style: Simple, minimal, validates generation works end-to-end
+
+PAGES:
+  1. Home — Basic KPI cards + simple bar chart
+  2. Details — Data table with filtering
+
+PURPOSE:
+  - Fastest possible generation to verify the pipeline works
+  - Minimal data model (1-2 tables, few rows)
+  - Quick smoke test for chart rendering + API connectivity

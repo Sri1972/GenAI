@@ -1,0 +1,25 @@
+EXCEL PARSER DOMAIN — ExcelInsight
+=====================================
+
+App Name: excel-insights
+Theme: Smart Excel analytics dashboard
+Accent: #2563EB (blue)
+Style: Light mode, dashboard-style with auto-generated charts
+
+PAGES:
+  1. Upload & Analyze — Drag-drop Excel file, auto-detect data types
+  2. Sheet Explorer — Navigate worksheets with auto-generated summaries
+  3. Chart Gallery — Auto-generated charts based on detected data patterns
+
+CHART TYPES EXERCISED (auto-detected from uploaded data):
+  - Line chart (time-series columns detected)
+  - Bar chart (categorical + numeric columns)
+  - Histogram (single numeric distribution)
+  - Scatter plot (two numeric columns)
+  - Pie chart (categorical frequency)
+  - Box plot (numeric grouped by category)
+
+DATA TABLES:
+  - No fixed tables — user uploads any .xlsx/.xls file
+  - Client-side parsing with xlsx library
+  - Auto-detection of column types (date, numeric, categorical, text)

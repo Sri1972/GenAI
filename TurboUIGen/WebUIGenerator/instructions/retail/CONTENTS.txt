@@ -1,0 +1,35 @@
+RETAIL DOMAIN — RetailNerve
+============================
+
+App Name: store-ops
+Theme: Vibrant retail operations — warm, energetic, card-heavy
+Accent: #F59E0B (amber — retail energy)
+Secondary: #7C3AED (purple — premium/loyalty)
+Style: Light mode, bold headers, rounded 12px corners, playful but professional
+
+PAGES:
+  1. Live Floor — Real-time store activity with foot traffic heatmap
+  2. Hourly Pulse — Time-series charts of traffic/revenue by hour
+  3. Promo War Room — Promotion performance with conversion funnels
+  4. Store Cards — Store comparison cards with performance badges
+  5. Ask RetailBot — AI assistant for store ops queries
+  6. Performance Lab — ADVANCED CHARTS showcase (see below)
+
+CHART TYPES EXERCISED:
+  - Funnel chart (conversion: foot traffic → browsing → basket → purchase)
+  - Gauge chart (store performance score per location)
+  - Polar/rose chart (revenue by hour of day — peak hours visualization)
+  - Treemap (revenue by store format by region)
+  - Waterfall chart (revenue bridge: base → promo uplift → seasonality → net)
+  - Radar chart (store comparison: traffic, conversion, basket, satisfaction, staff)
+  - Histogram (basket size distribution)
+  - Bubble chart (stores by sqft vs revenue vs satisfaction)
+  - Grouped bar chart (traffic vs transactions per store)
+  - Line chart (daily revenue trend, week-over-week)
+  - US state map (store locations with revenue heatmap)
+  - Stacked area chart (revenue by channel: in-store vs online vs pickup)
+
+DATA TABLES:
+  - stores (store info, format, sqft, employees, rating)
+  - hourly_metrics (foot traffic, transactions, revenue, queue times)
+  - promotions (promo campaigns, redemptions, attributed revenue)

@@ -1,0 +1,31 @@
+HEALTHCARE DOMAIN — MedFlow
+============================
+
+App Name: clinical-ops
+Theme: Healthcare operations — clean, clinical, high-contrast
+Accent: #0891B2 (cyan/teal — clinical calm)
+Secondary: #DC2626 (red — critical alerts only)
+Style: Light mode, large fonts, dense layouts (designed for charge nurses)
+
+PAGES:
+  1. Bed Board — Visual bed grid showing occupancy, acuity, isolation status
+  2. Patient Flow — Sankey diagram of patient movement (Admit→Unit→Discharge)
+  3. Handoff — Shift handoff notes with priority indicators
+  4. Unit Analytics — Charts page with hospital metrics (see below)
+  5. Clinical AI — AI assistant for patient queries
+
+CHART TYPES EXERCISED:
+  - Sankey diagram (patient flow: admission source → unit → discharge destination)
+  - Gauge chart (bed occupancy rate per unit)
+  - Stacked bar chart (patients by acuity per unit)
+  - Box plot (length of stay distribution by unit)
+  - Polar/rose chart (admissions by hour of day)
+  - Funnel chart (patient journey: Admitted → Treatment → Recovery → Discharge)
+  - Histogram (LOS distribution)
+  - Line chart (daily census trend)
+  - Donut chart (insurance mix)
+
+DATA TABLES:
+  - patients (demographics, unit, acuity, status, LOS, attending)
+  - bed_board (bed status, occupancy, isolation, equipment)
+  - handoff_notes (shift change summaries, priorities, action items)
