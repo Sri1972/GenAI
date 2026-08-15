@@ -1,0 +1,25 @@
+# Mobility Global Design System — Prerequisites
+# This is a Node.js project. Dependencies are managed via package.json.
+#
+# Requirements:
+#   - Node.js >= 18.x
+#   - npm >= 9.x
+#
+# To install dependencies:
+#   npm install
+#
+# To run Storybook:
+#   npm run storybook
+#
+# Node packages (from package.json):
+#   react ^18.3.1
+#   react-dom ^18.3.1
+#   @storybook/addon-essentials ^8.4.7
+#   @storybook/addon-interactions ^8.4.7
+#   @storybook/blocks ^8.4.7
+#   @storybook/react ^8.4.7
+#   @storybook/react-vite ^8.4.7
+#   @storybook/test ^8.4.7
+#   storybook ^8.4.7
+#   typescript ^5.6.3
+#   vite ^5.4.10
