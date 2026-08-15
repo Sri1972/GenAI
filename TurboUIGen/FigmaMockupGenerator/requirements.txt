@@ -1,0 +1,8 @@
+# Figma MCP + Wireframe Agent + Export pipeline
+fastapi
+uvicorn
+websockets
+openai
+httpx
+python-dotenv
+pydantic

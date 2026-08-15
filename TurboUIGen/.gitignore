@@ -1,0 +1,49 @@
+# Environment & secrets
+.env
+*.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Generated folder contents (large, ephemeral - can be regenerated)
+# Keep the folder structure but ignore contents
+WebUIGenerator/generated/web-apps/*
+!WebUIGenerator/generated/web-apps/.gitkeep
+WebUIGenerator/generated/shared-node-modules/*
+!WebUIGenerator/generated/shared-node-modules/.gitkeep
+FigmaMockupGenerator/generated/*
+!FigmaMockupGenerator/generated/.gitkeep
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+server.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+*.zip
