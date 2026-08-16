@@ -1033,6 +1033,28 @@ For EACH screen in the wireframe:
 
 Be EXHAUSTIVE. The more detail you provide, the better the generated app will match the wireframe.
 Use snake_case for all database column names. Derive everything from what you SEE in the screenshots.
+
+## CRITICAL: Chart Type Accuracy
+When describing charts, describe EXACTLY what you SEE visually — do NOT infer a different chart type from labels.
+- If you see ONE bar per category/month → it's a SIMPLE bar chart (not grouped)
+- If you see MULTIPLE thin bars side-by-side per category → it's a GROUPED bar chart
+- If you see a ring/donut shape → it's a DONUT chart
+- If you see a full circle with slices → it's a PIE chart
+
+IMPORTANT: Look at the LEFTMOST x-axis position (where bars are shortest/most distinguishable).
+Count the distinct bars there. If you count 1 bar per x-axis label, the chart is SIMPLE.
+Do NOT assume "grouped" just because the title mentions a category or breakdown.
+The title describes the data source — the VISUAL shows the chart type.
+
+## CRITICAL: Data Model Must Match Chart Type
+- SIMPLE bar chart (1 bar per month) → the data table should have ONE ROW per month with
+  a single aggregated value column (e.g., total_units, total_revenue). Do NOT create a
+  breakdown/category column for simple bar charts.
+- GROUPED bar chart (clearly multiple thin bars per month) → the data table should have
+  one row per group member per month (e.g., one row per category per month).
+- The data model DETERMINES the chart type. If you describe a simple bar chart but give
+  the table a category column with multiple rows per x-value, the developer will create a grouped chart.
+  MATCH the table structure to the visual chart type.
 """
 
 
@@ -1122,47 +1144,48 @@ def run(
     _emit(f"  URL: {figma_url[:70]}")
     _emit(f"{'='*60}\n")
 
-    # 1. URL pattern routing — decide primary path immediately, no round-trip needed
+    # 1. URL pattern routing
     url_type_m = re.search(r"figma\.com/(file|design|proto|make)/", figma_url, re.IGNORECASE)
     url_type = url_type_m.group(1).lower() if url_type_m else "design"
-
-    # make/proto → Playwright by default (browser-rendered prototype links)
-    # design/file → REST API by default (structured frame data + wiring)
-    use_rest_api = (url_type in ("design", "file")) and not force_playwright
 
     screenshots: list[dict] = []
     file_name    = "Figma Design"
     wiring:      dict = {}
-    # project-specific screenshots dir — resolved once we know the project name
     project_screenshots_dir: Path | None = None
     all_links:   list = []
     project_slug_name = ""
     used_playwright   = False
     file_key  = None
     frames    = []
+    api_succeeded = False
 
-    _emit(f"  URL type: {url_type}  →  "
-          f"{'REST API' if use_rest_api else 'Playwright'} (primary path)")
+    # ALL URL types try REST API first (proto/make URLs contain the same file key).
+    # REST API gives us: frame names, full structure, wiring, and per-frame screenshots.
+    # Playwright is the fallback when REST API fails (403, no token, etc.)
+    use_rest_api = not force_playwright
 
-    # ── REST API path (design / file URLs) ────────────────────────────────────
+    _emit(f"  URL type: {url_type}")
+    _emit(f"  Strategy: REST API first (structure + screenshots), Playwright fallback")
+
+    # ── REST API path (try for ALL URL types) ─────────────────────────────────
     if use_rest_api:
         try:
             file_key, _ = parse_figma_url(figma_url)
             _emit(f"  File key: {file_key}")
+            _emit(f"  Fetching frame structure via Figma REST API…")
             frames, file_name = get_top_frames(file_key)
 
             if not frames:
                 raise RuntimeError("No FRAME nodes found in this Figma file.")
 
-            _emit(f"\n  Screens found:")
+            _emit(f"\n  Screens found ({len(frames)} frames):")
             for f in frames:
                 _emit(f"    [{f['page']}] {f['name']}")
 
             project_slug_name = slug(project_name_override) if project_name_override else slug(file_name)
-            # Screenshots go into figma-mockups/<project-name>/screenshots/
             project_screenshots_dir = SCREENSHOTS_DIR / project_slug_name / "screenshots"
             project_screenshots_dir.mkdir(parents=True, exist_ok=True)
-            _emit(f"\n  Exporting screenshots → {project_screenshots_dir}")
+            _emit(f"\n  Exporting frame screenshots → {project_screenshots_dir}")
             screenshots = export_frame_screenshots(
                 file_key, frames, project_slug_name, scale=scale,
                 screenshots_dir=project_screenshots_dir
@@ -1170,26 +1193,23 @@ def run(
             if not screenshots:
                 raise RuntimeError("REST API returned no screenshot URLs")
 
-            _emit(f"\n  Screenshots saved:")
+            _emit(f"\n  Screenshots saved ({len(screenshots)} frames):")
             for s in screenshots:
                 _emit(f"    {s['filename']}")
 
+            api_succeeded = True
+
         except RuntimeError as e:
-            # 403 returns instantly — no delay before this fallback
             err_msg = str(e)
             _emit(f"\n  REST API failed ({err_msg[:80]})")
             _emit(f"  Falling back to Playwright screenshots…\n")
-            use_rest_api = False   # drop through to Playwright below
+            use_rest_api = False
 
-    # ── Playwright path (make / proto URLs, or REST API 403 fallback) ─────────
-    if not use_rest_api:
-        if url_type in ("make", "proto"):
-            _emit(f"  Using Playwright — '{url_type}' URLs render as browser prototypes")
-        else:
-            _emit(f"  Using Playwright — REST API fallback")
+    # ── Playwright fallback (only if REST API failed) ─────────────────────────
+    if not api_succeeded and not force_playwright:
+        _emit(f"  Using Playwright — capturing prototype screens via browser")
         _emit(f"  Wiring will be inferred by Claude from the screenshots.\n")
         try:
-            # Compute project dir before calling so screenshots land in the right place
             _slug_hint = slug(project_name_override) if project_name_override else ""
             _hint_dir  = (SCREENSHOTS_DIR / _slug_hint / "screenshots") if _slug_hint else None
             if _hint_dir:
@@ -1214,11 +1234,10 @@ def run(
         _emit(f"\n  --screenshots-only: stopping here.")
         return {"screenshots": [s["local_path"] for s in screenshots]}
 
-    # ── Wiring extraction (REST API path only) ────────────────────────────────
-    if use_rest_api and file_key and frames:
+    # ── Wiring extraction (when REST API succeeded) ─────────────────────────────
+    if api_succeeded and file_key and frames:
         _emit(f"\n  Extracting prototype links…")
         wiring, all_links = extract_prototype_links(file_key, frames)
-        # Save wiring JSON next to screenshots inside the project folder
         wiring_dir = project_screenshots_dir if project_screenshots_dir else SCREENSHOTS_DIR
         wiring_path = wiring_dir / "wiring.json"
         wiring_path.write_text(
@@ -1226,6 +1245,7 @@ def run(
             encoding="utf-8",
         )
         _emit(f"  Wiring map saved: {wiring_path.name}")
+        _emit(f"  Navigation links found: {len(all_links)}")
     else:
         _emit(f"  Wiring: inferred by Claude from screenshots")
 
@@ -1249,6 +1269,7 @@ def run(
         prompt=requirements_prompt,
         progress=progress_callback,
         project_name_override=final_name,
+        reference_images=screenshots,
     )
 
     # Copy screenshots into the project directory for reference

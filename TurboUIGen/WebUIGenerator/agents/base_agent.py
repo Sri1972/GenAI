@@ -98,8 +98,13 @@ class BaseAgent:
         return "\n".join(parts)
 
     def generate(self, prompt: str, context: str = "", stage: str = "",
-                 max_tokens: int = 32000, json_mode: bool = False) -> str | dict:
-        """Call the LLM with this agent's system prompt + context + user prompt."""
+                 max_tokens: int = 32000, json_mode: bool = False,
+                 images_b64: list[str] | None = None) -> str | dict:
+        """Call the LLM with this agent's system prompt + context + user prompt.
+
+        images_b64: optional list of base64-encoded PNG/JPEG images to include
+                    as visual references in the user message (vision mode).
+        """
         from agents.llm import chat, chat_json
 
         system = self.system_prompt(stage=stage)
@@ -107,7 +112,21 @@ class BaseAgent:
         if context:
             messages.append({"role": "user", "content": f"Context from previous stages:\n{context}"})
             messages.append({"role": "assistant", "content": "I've reviewed the context. What should I generate?"})
-        messages.append({"role": "user", "content": prompt})
+
+        if images_b64:
+            content: list[dict] = [
+                {"type": "text", "text": "Reference screenshots from the Figma design (replicate this visual layout):"}
+            ]
+            for img in images_b64:
+                media_type = "image/png" if not img.startswith("/9j/") else "image/jpeg"
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media_type};base64,{img}"},
+                })
+            content.append({"type": "text", "text": prompt})
+            messages.append({"role": "user", "content": content})
+        else:
+            messages.append({"role": "user", "content": prompt})
 
         if json_mode:
             return chat_json(messages, system=system, max_tokens=max_tokens, temperature=0.1)

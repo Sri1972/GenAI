@@ -10,4 +10,4 @@ for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":3000 "') do (
 timeout /t 1 /nobreak >nul
 
 python run.py
-::pause
+pause

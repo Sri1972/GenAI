@@ -1,9 +1,23 @@
 import { ExternalLink, RefreshCw, Zap } from 'lucide-react'
 import { useRef } from 'react'
+import { GenerateStep } from '../types'
 
-interface Props { url: string | null; loading?: boolean }
+const STEP_MESSAGES: Record<string, string> = {
+  figma_api: 'Fetching Figma design data…',
+  screenshot_start: 'Exporting Figma frames…',
+  screenshot_done: 'Screenshots captured, analyzing design…',
+  llm_analysis: 'Analyzing design patterns…',
+  llm: 'AI agents generating your app…',
+  llm_codegen: 'Writing code (this takes 2–5 minutes)…',
+  write: 'Writing files to disk…',
+  install: 'Installing packages…',
+  start: 'Starting dev server…',
+  qa: 'Running quality checks…',
+}
 
-export default function PreviewFrame({ url, loading }: Props) {
+interface Props { url: string | null; loading?: boolean; step?: GenerateStep }
+
+export default function PreviewFrame({ url, loading, step }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   const reload = () => {
@@ -62,7 +76,12 @@ export default function PreviewFrame({ url, loading }: Props) {
         {loading && (
           <div className="absolute inset-0 bg-white/90 flex flex-col items-center justify-center gap-4">
             <div className="w-10 h-10 rounded-full border-2 border-slate-200 border-t-indigo-500 animate-spin" />
-            <div className="text-slate-600 text-sm">Building your app — ~30–60 seconds…</div>
+            <div className="text-center">
+              <div className="text-slate-700 text-sm font-medium">
+                {step ? (STEP_MESSAGES[step] || 'Building your app…') : 'Building your app…'}
+              </div>
+              <div className="text-slate-400 text-xs mt-1">Check the Build Log tab for detailed progress</div>
+            </div>
           </div>
         )}
       </div>

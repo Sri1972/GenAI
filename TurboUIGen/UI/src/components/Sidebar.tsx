@@ -1,6 +1,6 @@
 import {
-  AlertCircle, ChevronDown, ChevronRight,
-  ExternalLink, FolderPlus, Info, Play, Square, Trash2,
+  AlertCircle, Check, ChevronDown, ChevronRight,
+  ExternalLink, FolderPlus, Info, Pencil, Play, Square, Trash2, X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -54,6 +54,9 @@ export default function Sidebar() {
   const [nameErr,      setNameErr]      = useState('')
   const [creating,     setCreating]     = useState(false)
   const [confirmName,  setConfirmName]  = useState<string | null>(null)
+  const [renaming,     setRenaming]     = useState<string | null>(null)
+  const [renameValue,  setRenameValue]  = useState('')
+  const [renameErr,    setRenameErr]    = useState('')
 
   // Auto-expand the active project
   useEffect(() => {
@@ -115,9 +118,39 @@ export default function Sidebar() {
     setBusy(name, 'deleting')
     try {
       await api.delete(name)
-      if (activeProject === name) navigate('/')
+      refresh()
+      navigate('/')
     } catch {}
     setBusy(name, null)
+  }
+
+  const startRename = (name: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setRenaming(name)
+    setRenameValue(name)
+    setRenameErr('')
+  }
+
+  const cancelRename = () => {
+    setRenaming(null)
+    setRenameValue('')
+    setRenameErr('')
+  }
+
+  const doRename = async (oldName: string) => {
+    const err = validateName(renameValue)
+    if (err && renameValue.toLowerCase() !== oldName) { setRenameErr(err); return }
+    if (renameValue.toLowerCase() === oldName) { cancelRename(); return }
+    try {
+      const res = await api.rename(oldName, renameValue)
+      cancelRename()
+      refresh()
+      if (activeProject === oldName) {
+        navigate(`/project/${res.name}`)
+      }
+    } catch (e: any) {
+      setRenameErr(e.message)
+    }
   }
 
   return (
@@ -174,13 +207,14 @@ export default function Sidebar() {
           const isActive   = activeProject === p.name
           const isExpanded = expanded === p.name
           const isBusy     = busyMap[p.name] ?? null
+          const isRenaming = renaming === p.name
 
           return (
             <div key={p.name}>
-              {/* Project row — use inset box-shadow for active indicator instead of
-                    border-r so the row width never changes and columns stay aligned */}
+              {/* Project row */}
               <div
                 onClick={() => {
+                  if (isRenaming) return
                   setExpanded(isExpanded ? null : p.name)
                   navigate(`/project/${p.name}`)
                 }}
@@ -188,17 +222,39 @@ export default function Sidebar() {
                 className={`flex items-center h-8 px-3 cursor-pointer transition-colors
                   ${!isActive ? 'hover:bg-slate-100' : ''}`}
               >
-                {/* Chevron — fixed 16px, always same position */}
+                {/* Chevron */}
                 <span className="w-4 flex-shrink-0 flex items-center justify-center text-slate-500">
                   {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                 </span>
 
-                {/* Name — fills remaining space */}
-                <span className={`flex-1 min-w-0 text-xs font-medium truncate ml-1.5 ${isActive ? 'text-indigo-700' : 'text-slate-700'}`}>
-                  {p.name}
-                </span>
+                {/* Name or rename input */}
+                {isRenaming ? (
+                  <div className="flex-1 flex items-center gap-1 ml-1.5 min-w-0" onClick={e => e.stopPropagation()}>
+                    <input
+                      className="flex-1 min-w-0 bg-white border border-indigo-400 rounded px-1.5 py-0.5 text-xs text-slate-800
+                                 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      value={renameValue}
+                      onChange={e => { setRenameValue(e.target.value); setRenameErr('') }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') doRename(p.name)
+                        if (e.key === 'Escape') cancelRename()
+                      }}
+                      autoFocus
+                    />
+                    <button onClick={() => doRename(p.name)} className="text-emerald-600 hover:text-emerald-700">
+                      <Check size={12} />
+                    </button>
+                    <button onClick={cancelRename} className="text-slate-400 hover:text-slate-600">
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <span className={`flex-1 min-w-0 text-xs font-medium truncate ml-1.5 ${isActive ? 'text-indigo-700' : 'text-slate-700'}`}>
+                    {p.name}
+                  </span>
+                )}
 
-                {/* Status indicator — fixed 12px */}
+                {/* Status indicator */}
                 <span className="w-3 flex-shrink-0 flex items-center justify-center ml-1">
                   {genMap[p.name]?.loading
                     ? <span className="w-2 h-2 rounded-full border border-indigo-400 border-t-transparent animate-spin" />
@@ -206,6 +262,13 @@ export default function Sidebar() {
                   }
                 </span>
               </div>
+
+              {/* Rename error */}
+              {isRenaming && renameErr && (
+                <div className="pl-7 pr-3 py-1 text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle size={10} />{renameErr}
+                </div>
+              )}
 
               {/* Expanded details — same left indent as name column (pl-7 = 28px) */}
               {isExpanded && (
@@ -229,28 +292,31 @@ export default function Sidebar() {
 
                   {/* Status + URL */}
                   <div className="flex items-center gap-1.5">
-                    {p.running
-                      ? <span className="text-xs text-emerald-600 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Running
+                    {genMap[p.name]?.loading
+                      ? <span className="text-xs text-indigo-600 flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full border border-indigo-400 border-t-transparent animate-spin" />Building…
                         </span>
-                      : <span className="text-xs text-slate-500">Stopped</span>
+                      : p.running
+                        ? <span className="text-xs text-emerald-600 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Running
+                          </span>
+                        : <span className="text-xs text-slate-500">Stopped</span>
                     }
-                    {p.hasApp && p.port && (
+                    {p.hasApp && p.port && !genMap[p.name]?.loading && (
                       <span className="text-xs text-slate-500 ml-auto">:{p.port}</span>
                     )}
                   </div>
 
-                  {/* URL */}
-                  {p.running && p.url && (
+                  {/* URL — only show when ready, not during build */}
+                  {p.running && p.url && !genMap[p.name]?.loading && (
                     <div className="flex items-center gap-1 min-w-0">
                       <span className="text-xs text-indigo-600 font-mono truncate flex-1">{p.url}</span>
                     </div>
                   )}
 
-                  {/* Actions */}
-                  {p.hasApp && (
+                  {/* Actions — app controls (only when app exists AND not building) */}
+                  {p.hasApp && !genMap[p.name]?.loading && (
                     <div className="flex gap-1.5">
-                      {/* Preview — always first when running */}
                       {p.running && p.url && (
                         <button
                           onClick={e => { e.stopPropagation(); onPreview(p.url!) }}
@@ -284,17 +350,6 @@ export default function Sidebar() {
                             Start
                           </button>
                       }
-                      <button
-                        onClick={e => deleteP(p.name, e)}
-                        disabled={!!isBusy}
-                        title="Delete project"
-                        className="p-1.5 rounded bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 border border-red-200
-                                   transition-colors disabled:opacity-40"
-                      >
-                        {isBusy === 'deleting'
-                          ? <span className="w-2.5 h-2.5 rounded-full border border-red-400 border-t-transparent animate-spin block" />
-                          : <Trash2 size={11} />}
-                      </button>
                     </div>
                   )}
 
@@ -306,6 +361,30 @@ export default function Sidebar() {
                         </div>
                       : <p className="text-xs text-slate-500 italic">No app generated yet</p>
                   )}
+
+                  {/* Rename / Delete — always available */}
+                  <div className="flex gap-1.5 pt-1">
+                    <button
+                      onClick={e => startRename(p.name, e)}
+                      disabled={!!isBusy}
+                      title="Rename project"
+                      className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-700 border border-slate-200
+                                 transition-colors disabled:opacity-40"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                    <button
+                      onClick={e => deleteP(p.name, e)}
+                      disabled={!!isBusy}
+                      title="Delete project"
+                      className="p-1.5 rounded bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 border border-red-200
+                                 transition-colors disabled:opacity-40"
+                    >
+                      {isBusy === 'deleting'
+                        ? <span className="w-2.5 h-2.5 rounded-full border border-red-400 border-t-transparent animate-spin block" />
+                        : <Trash2 size={11} />}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

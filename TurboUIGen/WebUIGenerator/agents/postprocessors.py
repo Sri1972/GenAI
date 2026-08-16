@@ -1453,23 +1453,61 @@ def _fix_d3_resize_observer(files: dict) -> dict:
                 content = new_content
                 changed = True
 
-        # ── 2. Fix parentElement usage (generic — catches any ref name) ──────
-        if "parentElement" in content:
+        # ── 2. Fix ResizeObserver observe target: must observe parent div, not SVG ──
+        # SVG elements with width:100% don't reliably trigger ResizeObserver.
+        # Ensure ro.observe() targets the parent element (a regular block div).
+        if "ro.observe(" in content:
             new_content = re.sub(
-                r'(\w+Ref)\.current\?\.parentElement',
-                r'\1.current',
+                r'ro\.observe\((\w+)\)',
+                r'ro.observe(\1.parentElement || \1)',
                 content
             )
+            # Avoid double-wrapping if already correct
+            new_content = new_content.replace(
+                ".parentElement || .parentElement ||",
+                ".parentElement ||"
+            )
             new_content = re.sub(
-                r'(\w+Ref)\.current!\.parentElement',
-                r'\1.current!',
+                r'ro\.observe\((\w+)\.parentElement \|\| \1\.parentElement \|\| \1\)',
+                r'ro.observe(\1.parentElement || \1)',
                 new_content
             )
-            new_content = new_content.replace(
-                "ref.current?.parentElement", "ref.current"
+            if new_content != content:
+                files[path] = new_content
+                content = new_content
+                changed = True
+
+        # ── 2b. Fix MISSING deps array: ResizeObserver in useEffect(...) without []
+        # causes infinite re-render loop (setDims creates new object → re-render →
+        # effect runs again → setDims again → ...). Ensure deps are present.
+        #
+        # HOWEVER: if the component has an early return for loading (before SVGs mount),
+        # using [] means the observer never sets up (refs are null on first mount).
+        # In that case, use [loading] so the effect re-runs when data arrives.
+        if "ResizeObserver" in content:
+            # Detect loading variable used in early return: if (loading) return / if (isLoading) return
+            loading_var_match = re.search(
+                r'if\s*\(\s*(is[Ll]oading|loading|isLoading)\s*\)\s*\{?\s*return\b',
+                content,
             )
-            new_content = new_content.replace(
-                "ref.current!.parentElement", "ref.current!"
+            deps_value = f"[{loading_var_match.group(1)}]" if loading_var_match else "[]"
+
+            new_content = re.sub(
+                r'(return\s*\(\)\s*=>\s*ro\.disconnect\(\);?\s*\})\)',
+                rf'\1, {deps_value})',
+                content,
+            )
+            # Also handle the variant: return () => { ro.disconnect() } })
+            new_content = re.sub(
+                r'(return\s*\(\)\s*=>\s*\{\s*ro\.disconnect\(\);?\s*\}\s*\})\)',
+                rf'\1, {deps_value})',
+                new_content,
+            )
+            # Avoid double deps
+            new_content = re.sub(
+                r', \[[\w]*\]\), \[[\w]*\]\)',
+                f', {deps_value})',
+                new_content,
             )
             if new_content != content:
                 files[path] = new_content

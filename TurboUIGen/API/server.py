@@ -32,6 +32,13 @@ from agents.uigen_agent import (
 _progress_logs: dict[str, list[str]] = {}
 # Latest active request id (for polling without knowing the id)
 _latest_request_id: str = ""
+# Per-project latest request id (for tab-scoped polling)
+_project_request_ids: dict[str, str] = {}
+
+# Job state for async/persistent generation
+# Maps request_id -> { status, project_name, result, error }
+_jobs: dict[str, dict] = {}
+_JOBS_DIR: Path | None = None  # initialized after GENERATED_DIR available
 
 app = FastAPI(title="TurboUIGen")
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -39,6 +46,29 @@ _executor = ThreadPoolExecutor(max_workers=4)
 _ROOT   = Path(__file__).resolve().parent.parent   # TurboUIGen/
 UI_DIST = _ROOT / "UI" / "dist"
 UI_DEV  = _ROOT / "UI" / "index.html"
+
+
+@app.on_event("startup")
+async def _startup_cleanup():
+    """Remove orphaned entries from .ports.json that no longer have a directory on disk."""
+    try:
+        from agents.uigen_agent import GENERATED_DIR, _dev_ports, _api_ports, _save_ports
+        import json as _json_su
+        from config import PORTS_FILE
+        if not PORTS_FILE.exists():
+            return
+        existing_dirs = {d.name for d in GENERATED_DIR.iterdir() if d.is_dir()} if GENERATED_DIR.exists() else set()
+        orphaned_vite = [k for k in list(_dev_ports.keys()) if k not in existing_dirs]
+        orphaned_api = [k for k in list(_api_ports.keys()) if k not in existing_dirs]
+        for k in orphaned_vite:
+            _dev_ports.pop(k, None)
+        for k in orphaned_api:
+            _api_ports.pop(k, None)
+        if orphaned_vite or orphaned_api:
+            _save_ports()
+            print(f"[startup] Cleaned {len(orphaned_vite) + len(orphaned_api)} orphaned port entries", flush=True)
+    except Exception as e:
+        print(f"[startup] Port cleanup skipped: {e}", flush=True)
 
 
 class GenerateRequest(BaseModel):
@@ -63,6 +93,9 @@ class RefineRequest(BaseModel):
 
 class CreateProjectRequest(BaseModel):
     name: str
+
+class RenameProjectRequest(BaseModel):
+    new_name: str
 
 
 # ── Serve UI ──────────────────────────────────────────────────────────────────
@@ -186,6 +219,75 @@ async def api_create_project(req: CreateProjectRequest):
     return {"name": name}
 
 
+@app.post("/api/projects/{project_name}/rename")
+async def api_rename_project(project_name: str, req: RenameProjectRequest):
+    """Rename a project — updates folder, registry, ports, and any running servers."""
+    import re
+    from agents.uigen_agent import (
+        GENERATED_DIR, _dev_ports, _api_ports, _dev_servers, _api_servers, _save_ports,
+    )
+
+    new_name = re.sub(r"[^a-z0-9-]", "-", req.new_name.lower()).strip("-")
+    if not new_name:
+        raise HTTPException(400, "Invalid new project name")
+    if new_name == project_name:
+        return {"name": new_name, "oldName": project_name}
+
+    old_dir = GENERATED_DIR / project_name
+    new_dir = GENERATED_DIR / new_name
+
+    if not old_dir.exists():
+        raise HTTPException(404, f"Project '{project_name}' not found")
+    if new_dir.exists():
+        raise HTTPException(409, f"Project '{new_name}' already exists")
+
+    # Stop running servers first (they hold file locks)
+    if project_name in _dev_servers:
+        _dispatch_stop(project_name)
+
+    # Rename directory
+    old_dir.rename(new_dir)
+
+    # Update ports
+    if project_name in _dev_ports:
+        _dev_ports[new_name] = _dev_ports.pop(project_name)
+    if project_name in _api_ports:
+        _api_ports[new_name] = _api_ports.pop(project_name)
+    _save_ports()
+
+    # Update registry — read old entry, remove, re-add under new name
+    from agents.uigen_agent import _load_registry, _save_registry
+    reg = _load_registry()
+    entry = reg.pop(project_name, {})
+    entry["name"] = new_name
+    if entry.get("title") == project_name:
+        entry["title"] = new_name
+    reg[new_name] = entry
+    _save_registry(reg)
+
+    # Update per-project request tracking
+    if project_name in _project_request_ids:
+        _project_request_ids[new_name] = _project_request_ids.pop(project_name)
+
+    # Update job files that reference the old project name
+    import json as _json_rename
+    jobs_dir = _get_jobs_dir()
+    for job_file in jobs_dir.glob("*.json"):
+        try:
+            job_data = _json_rename.loads(job_file.read_text(encoding="utf-8"))
+            if job_data.get("projectName") == project_name:
+                job_data["projectName"] = new_name
+                job_file.write_text(_json_rename.dumps(job_data, indent=2, ensure_ascii=False), encoding="utf-8")
+                # Also update in-memory cache
+                rid = job_file.stem
+                if rid in _jobs:
+                    _jobs[rid]["projectName"] = new_name
+        except Exception:
+            pass
+
+    return {"name": new_name, "oldName": project_name}
+
+
 def _append_history(project_name: str, event: str, detail: str = "",
                     figma_url: str = "", prompt: str = "", comment: str = "",
                     instructions: str = ""):
@@ -231,6 +333,84 @@ def _append_buildlog(project_name: str, log_lines: list[str],
         "lines":     log_lines,
     })
     buildlog_file.write_text(_json.dumps(runs, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+# ── User-friendly error messages ─────────────────────────────────────────────
+
+def _friendly_error(raw: str) -> str:
+    """Convert raw exception text into a short, actionable message."""
+    r = raw.lower()
+    if "security token" in r and "expired" in r:
+        return "AWS credentials expired. Please refresh your SSO session (e.g. `aws sso login`) and try again."
+    if "403" in r and "bedrock" in r:
+        return "AWS Bedrock access denied (403). Check that your credentials are valid and you have invoke permissions."
+    if "503 service unavailable" in r and "litellm" in r.replace(" ", ""):
+        return "LiteLLM proxy is unavailable (503). No healthy backends. Check that the proxy is running."
+    if "both litellm and bedrock failed" in r:
+        if "expired" in r:
+            return "Both LLM backends failed. LiteLLM is down and AWS credentials have expired. Refresh your SSO session and try again."
+        return "Both LLM backends failed. Check that LiteLLM proxy is running or AWS credentials are valid."
+    if "connectionerror" in r or "connecterror" in r:
+        return "Cannot connect to LLM backend. Check network connectivity and proxy settings."
+    if "authenticationerror" in r or "401" in r:
+        return "LLM authentication failed. Check your API key in .env."
+    if "timeout" in r:
+        return "LLM request timed out. The service may be overloaded — try again in a moment."
+    # Fallback: take first line, cap at 200 chars
+    first_line = raw.split('\n')[0]
+    return first_line[:200] if len(first_line) > 200 else first_line
+
+
+# ── Job persistence (survives browser close) ─────────────────────────────────
+
+def _get_jobs_dir() -> Path:
+    from agents.uigen_agent import GENERATED_DIR
+    jobs_dir = GENERATED_DIR.parent / ".jobs"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    return jobs_dir
+
+
+def _save_job(request_id: str, job: dict):
+    """Persist job state to disk so it survives browser disconnects."""
+    import json as _json
+    _jobs[request_id] = job
+    jobs_file = _get_jobs_dir() / f"{request_id}.json"
+    jobs_file.write_text(_json.dumps(job, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _load_job(request_id: str) -> dict | None:
+    """Load a job from memory or disk."""
+    if request_id in _jobs:
+        return _jobs[request_id]
+    jobs_file = _get_jobs_dir() / f"{request_id}.json"
+    if jobs_file.exists():
+        import json as _json
+        try:
+            job = _json.loads(jobs_file.read_text(encoding="utf-8"))
+            _jobs[request_id] = job
+            return job
+        except Exception:
+            return None
+    return None
+
+
+def _load_active_jobs() -> list[dict]:
+    """Load all active (running) jobs from disk."""
+    import json as _json
+    jobs_dir = _get_jobs_dir()
+    active = []
+    if not jobs_dir.exists():
+        return active
+    for f in jobs_dir.iterdir():
+        if f.suffix == ".json":
+            try:
+                job = _json.loads(f.read_text(encoding="utf-8"))
+                if job.get("status") == "running":
+                    job["requestId"] = f.stem
+                    active.append(job)
+            except Exception:
+                pass
+    return active
 
 
 def _write_meta(project_name: str, figma_url: str | None, prompt: str | None,
@@ -332,11 +512,7 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
         import re as _re2
         from agents.figma_to_web_using_api_agent import run as figma_run
 
-        _url_type_m = _re2.search(r"figma\.com/(file|design|proto|make)/", req.figma_url, _re2.IGNORECASE)
-        _url_type = _url_type_m.group(1).lower() if _url_type_m else "design"
-        _is_rest = _url_type in ("design", "file")
-        if _is_rest:
-            _progress("figma_api")
+        _progress("figma_api")
         _progress("screenshot_start")
         raw = figma_run(
             figma_url=req.figma_url.strip(),
@@ -348,6 +524,7 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
         _progress(f"screenshot_done:{len(raw.get('screenshots', []))}")
 
         project_name = raw["project_name"]
+        _project_request_ids[project_name] = request_id
         _write_meta(project_name, req.figma_url.strip(), req.prompt,
                     title=raw.get("title", ""), has_app=True)
         _append_buildlog(project_name, _progress_logs.get(request_id, []),
@@ -394,6 +571,7 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
     )
 
     project_name = result["projectName"]
+    _project_request_ids[project_name] = request_id
     _write_meta(project_name, req.figma_url, req.prompt, title=result.get("title", project_name),
                 has_app=True, instructions=instructions)
 
@@ -1150,29 +1328,62 @@ async def api_refine(project_name: str, req: RefineRequest):
     request_id = uuid.uuid4().hex
     _progress_logs[request_id] = []
     _latest_request_id = request_id
+    _project_request_ids[project_name] = request_id
     loop = asyncio.get_event_loop()
-    try:
-        if req.architecture:
-            # Pre-approved draft → use the multi-agent pipeline with selective regeneration
-            result = await loop.run_in_executor(
-                _executor, _run_refine_with_architecture, project_name, req, request_id
+
+    _save_job(request_id, {
+        "status": "running",
+        "projectName": project_name,
+        "prompt": req.prompt[:200],
+        "result": None,
+        "error": None,
+    })
+
+    async def _run_in_bg():
+        try:
+            if req.architecture:
+                result = await loop.run_in_executor(
+                    _executor, _run_refine_with_architecture, project_name, req, request_id
+                )
+            else:
+                result = await loop.run_in_executor(
+                    _executor, _run_refine, project_name, req.prompt, request_id, req.comment, req.instructions
+                )
+            result["requestId"] = request_id
+            _save_job(request_id, {
+                "status": "completed",
+                "projectName": project_name,
+                "result": result,
+                "error": None,
+            })
+        except Exception as e:
+            import traceback
+            raw_detail = f"{type(e).__name__}: {e}"
+            friendly = _friendly_error(raw_detail)
+            print(f"\n[REFINE ERROR]\n{raw_detail}\n{traceback.format_exc()[-1500:]}\n")
+
+            from datetime import datetime as _dt_err2
+            _progress_logs.setdefault(request_id, []).append(
+                f"[{_dt_err2.now().strftime('%H:%M:%S')} +0.0s] error:{friendly}"
             )
-        else:
-            result = await loop.run_in_executor(
-                _executor, _run_refine, project_name, req.prompt, request_id, req.comment, req.instructions
-            )
-        result["requestId"] = request_id
-        return result
-    except Exception as e:
-        import traceback
-        detail = f"{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}"
-        print(f"\n[REFINE ERROR]\n{detail}\n")
-        raise HTTPException(500, detail)
-    finally:
-        async def _cleanup():
-            await asyncio.sleep(60)
-            _progress_logs.pop(request_id, None)
-        asyncio.create_task(_cleanup())
+            _append_buildlog(project_name, _progress_logs.get(request_id, []),
+                             event="Refine failed", duration_s=0)
+
+            _save_job(request_id, {
+                "status": "failed",
+                "projectName": project_name,
+                "result": None,
+                "error": friendly,
+            })
+        finally:
+            async def _cleanup():
+                await asyncio.sleep(300)
+                _progress_logs.pop(request_id, None)
+            asyncio.create_task(_cleanup())
+
+    asyncio.create_task(_run_in_bg())
+
+    return {"requestId": request_id, "status": "running", "projectName": project_name}
 
 
 def _run_refine_with_architecture(project_name: str, req: RefineRequest, request_id: str) -> dict:
@@ -1241,8 +1452,15 @@ async def api_history(project_name: str):
 
 @app.get("/api/generate/progress/latest")
 async def api_progress_latest():
-    """Poll current generation progress without needing a request ID."""
+    """Poll current generation progress without needing a request ID (legacy/global)."""
     return {"id": _latest_request_id, "log": _progress_logs.get(_latest_request_id, [])}
+
+
+@app.get("/api/generate/progress/project/{project_name}")
+async def api_progress_by_project(project_name: str):
+    """Poll progress scoped to a specific project (tab-safe)."""
+    rid = _project_request_ids.get(project_name, "")
+    return {"id": rid, "log": _progress_logs.get(rid, [])}
 
 
 @app.get("/api/generate/progress/{request_id}")
@@ -1267,26 +1485,96 @@ async def api_project_buildlog(project_name: str):
 
 @app.post("/api/generate")
 async def api_generate(req: GenerateRequest):
+    """
+    Fire-and-forget generation. Returns requestId immediately.
+    The job runs in background and survives browser disconnects.
+    Poll /api/jobs/{requestId} for status/result, or /api/generate/progress/{requestId} for logs.
+    """
     global _latest_request_id
     import uuid
     request_id = uuid.uuid4().hex
     _progress_logs[request_id] = []
-    _latest_request_id = request_id   # set BEFORE spawning so poll can start immediately
+    _latest_request_id = request_id
+
+    # Track per-project request id for tab-scoped polling
+    import re as _re_gen
+    project_slug = ""
+    if req.project_name:
+        project_slug = _re_gen.sub(r"[^a-z0-9-]", "-", req.project_name.lower()).strip("-")
+    if project_slug:
+        _project_request_ids[project_slug] = request_id
+
+    # Persist initial job state
+    _save_job(request_id, {
+        "status": "running",
+        "projectName": project_slug or None,
+        "prompt": req.prompt[:200],
+        "result": None,
+        "error": None,
+    })
+
+    # Launch in background — does NOT block the HTTP response
     loop = asyncio.get_event_loop()
-    try:
-        result = await loop.run_in_executor(_executor, _run_generate, req, request_id)
-        result["requestId"] = request_id
-        return result
-    except Exception as e:
-        import traceback
-        detail = f"{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}"
-        print(f"\n[ERROR /api/generate]\n{detail}\n")
-        raise HTTPException(500, detail)
-    finally:
-        async def _cleanup():
-            await asyncio.sleep(60)
-            _progress_logs.pop(request_id, None)
-        asyncio.create_task(_cleanup())
+
+    async def _run_in_bg():
+        try:
+            result = await loop.run_in_executor(_executor, _run_generate, req, request_id)
+            result["requestId"] = request_id
+            _save_job(request_id, {
+                "status": "completed",
+                "projectName": result.get("projectName"),
+                "result": result,
+                "error": None,
+            })
+        except Exception as e:
+            import traceback
+            raw_detail = f"{type(e).__name__}: {e}"
+            friendly = _friendly_error(raw_detail)
+            print(f"\n[ERROR /api/generate bg] {raw_detail}\n{traceback.format_exc()[-1500:]}\n")
+
+            # Write error to progress log so polling sees it
+            from datetime import datetime as _dt_err
+            _progress_logs.setdefault(request_id, []).append(
+                f"[{_dt_err.now().strftime('%H:%M:%S')} +0.0s] error:{friendly}"
+            )
+
+            # Persist buildlog on failure so it survives browser close
+            pname = project_slug or None
+            if pname:
+                _append_buildlog(pname, _progress_logs.get(request_id, []),
+                                 event="Failed", duration_s=0)
+
+            _save_job(request_id, {
+                "status": "failed",
+                "projectName": pname,
+                "result": None,
+                "error": friendly,
+            })
+        finally:
+            # Clean up in-memory progress logs after 5 minutes
+            async def _cleanup():
+                await asyncio.sleep(300)
+                _progress_logs.pop(request_id, None)
+            asyncio.create_task(_cleanup())
+
+    asyncio.create_task(_run_in_bg())
+
+    return {"requestId": request_id, "status": "running", "projectName": project_slug or None}
+
+
+@app.get("/api/jobs/{request_id}")
+async def api_job_status(request_id: str):
+    """Check the status of a generation job. Returns status, result (if done), or error."""
+    job = _load_job(request_id)
+    if not job:
+        raise HTTPException(404, f"Job '{request_id}' not found")
+    return {"requestId": request_id, **job}
+
+
+@app.get("/api/jobs")
+async def api_list_jobs():
+    """List all active (running) jobs — useful for reconnecting after browser close."""
+    return {"jobs": _load_active_jobs()}
 
 
 def _dispatch_start(project_name: str) -> dict:
@@ -1306,6 +1594,23 @@ def _dispatch_delete(project_name: str):
     from agents.figma_to_web_using_playwright_agent import is_figma_project, kill_figma_server
     if is_figma_project(project_name):
         kill_figma_server(project_name, forget_port=True)
+
+    # Clean up Docker container and image
+    try:
+        from agents.docker_agent import (
+            delete_container, image_tag, _docker,
+            _load_container_ports, _save_container_ports,
+        )
+        delete_container(project_name)
+        _docker(["rmi", "-f", image_tag(project_name)], timeout=30)
+        # Free the port
+        ports = _load_container_ports()
+        if project_name in ports:
+            del ports[project_name]
+            _save_container_ports(ports)
+    except Exception:
+        pass
+
     delete_project(project_name)
     registry_remove(project_name)
 
@@ -1383,6 +1688,7 @@ async def api_docker_build(project_name: str):
     request_id = uuid.uuid4().hex
     _progress_logs[request_id] = []
     _latest_request_id = request_id
+    _project_request_ids[project_name] = request_id
     loop = asyncio.get_event_loop()
     try:
         result = await loop.run_in_executor(

@@ -5,12 +5,11 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useBusy, useProjectsCtx } from '../App'
+import { useProjectsCtx } from '../App'
 import { Project } from '../types'
 import PreviewFrame from '../components/PreviewFrame'
 import ResizablePanels from '../components/ResizablePanels'
 import StepProgress from '../components/StepProgress'
-import ConfirmDialog from '../components/ConfirmDialog'
 import InstructionsModal, { InstructionsBadge } from '../components/InstructionsModal'
 import { api, DraftResult } from '../hooks/useApi'
 import { BuildLogRun, DockerStatus, GenerateResult, GenerateStep, HistoryEvent } from '../types'
@@ -52,8 +51,6 @@ function cleanLogLines(lines: string[]): string[] {
 export default function ProjectDetailPage() {
   const { name }    = useParams<{ name: string }>()
   const navigate    = useNavigate()
-  const { busyProject } = useBusy()
-  const isSidebarBusy = busyProject === name
 
   // Shared context — same data source as sidebar
   const { projects, genMap, refresh: refreshProjects, setGenState } = useProjectsCtx()
@@ -79,9 +76,6 @@ export default function ProjectDetailPage() {
   const [showInstrModal, setShowInstrModal] = useState(false)
   const [viewInstructions, setViewInstructions] = useState<string | null>(null)
   const [sandboxCopied, setSandboxCopied] = useState(false)
-  const [busyServer,setBusy]     = useState(false)
-  const [deletingApp,  setDelApp]       = useState(false)
-  const [confirmDelete, setConfirmDel] = useState(false)
   const [history,   setHistory]  = useState<HistoryEvent[]>([])
   const [showHistory,setShowHist]= useState(false)
   const [buildLog,  setBuildLog] = useState<BuildLogRun[]>([])
@@ -99,6 +93,13 @@ export default function ProjectDetailPage() {
     try { setDocker(await api.getDockerStatus(name)) } catch {}
   }
 
+  // Redirect to home if project doesn't exist (e.g., deleted then page refreshed)
+  useEffect(() => {
+    if (name && projects.length > 0 && !project) {
+      navigate('/', { replace: true })
+    }
+  }, [name, projects, project])
+
   // Reset local state when switching projects
   useEffect(() => {
     setPrompt('')
@@ -111,20 +112,27 @@ export default function ProjectDetailPage() {
     setDocker(null)
     setDockerLog([])
     setDockerBusy(null)
-    // Load saved draft from server for this project
     setDraft(null)
-    if (name) {
-      api.getDraft(name).then(d => {
-        if (d) { setDraft(d); setRightTab('draft') }
-      }).catch(() => {})
+
+    // Don't override rightTab if a build is already in progress (loading state from context)
+    const currentGen = genMap[name ?? '']
+    if (currentGen?.loading) {
+      setRightTab('log')
+    } else {
+      setRightTab('preview')
+      // Load saved draft from server for this project
+      if (name) {
+        api.getDraft(name).then(d => {
+          if (d) { setDraft(d); setRightTab('draft') }
+        }).catch(() => {})
+      }
     }
-    setRightTab('preview')
+
     const p = projects.find(x => x.name === name)
     if (p?.running && p.url) {
       setPreview(p.url)
     } else {
       setPreview(null)
-      // Auto-start the app if it exists but isn't running
       if (p?.hasApp && name) {
         api.start(name).then(r => {
           if (r.url) { setPreview(r.url); onPreview(r.url) }
@@ -141,11 +149,13 @@ export default function ProjectDetailPage() {
     }
   }, [project?.running, project?.url])
 
-  // Switch to log tab while building, back to preview when done
+  // Switch back to preview when build completes (only if still on log tab)
   useEffect(() => {
-    if (loading) setRightTab('log')
-    else if (!loading && rightTab === 'log') setRightTab('preview')
-  }, [loading])
+    if (!loading && step === 'ready' && rightTab === 'log') {
+      setRightTab('preview')
+    }
+  }, [loading, step])
+
 
   // Load history
   const loadHistory = async () => {
@@ -197,6 +207,11 @@ export default function ProjectDetailPage() {
       else if (body === 'start')   { lastStep = 'start' }
       else if (body === 'qa')      { lastStep = 'start' }
       else if (body === 'ready')   { lastStep = 'ready' }
+      else if (body.startsWith('error:')) {
+        lastStep = null
+        const msg = body.slice('error:'.length).trim()
+        if (msg) logLines.push(ts ? `${ts} ❌ ${msg}` : `❌ ${msg}`)
+      }
       else {
         // Generic log line — strip any internal prefix
         const msg = body.replace(/^[a-z_]+:/, '').trim()
@@ -206,15 +221,18 @@ export default function ProjectDetailPage() {
     return { lastStep, logLines }
   }
 
-  // Poll progress and resolve as soon as 'ready' is seen
-  // Also stops waiting if the HTTP call completes first
-  const pollUntilReady = (_hasFigma: boolean) => {
+  // Poll progress using project-scoped endpoint (tab-safe) or request-id
+  const pollUntilReady = (requestId?: string) => {
     let timer: ReturnType<typeof setInterval>
     let resolved = false
     const promise = new Promise<void>(resolve => {
       timer = setInterval(async () => {
         try {
-          const r = await fetch('/api/generate/progress/latest')
+          // Use request-specific endpoint if we have the requestId, else project-scoped
+          const url = requestId
+            ? `/api/generate/progress/${requestId}`
+            : `/api/generate/progress/project/${name}`
+          const r = await fetch(url)
           if (!r.ok) return
           const d = await r.json()
           const msgs: string[] = d.log || []
@@ -238,45 +256,147 @@ export default function ProjectDetailPage() {
   ) => {
     setLoading(true); setError(''); setResult(null); setLog([])
     setStep(hasFigma ? 'figma_api' : 'llm')
+    setRightTab('log')  // Immediately switch to build log tab
 
-    const { promise: readyPromise, stop } = pollUntilReady(hasFigma)
+    try {
+      // API now returns immediately with { requestId, status }
+      const initial = await apiFn() as any
+      const requestId = initial.requestId as string
 
-    // Race: either 'ready' from poll OR HTTP response — whichever comes first
-    let data: GenerateResult | null = null
-    let apiError: string | null = null
+      // Start polling with the specific request ID (tab-safe)
+      const { promise: readyPromise, stop } = pollUntilReady(requestId)
 
-    const apiCall = apiFn().then(d => { data = d }).catch(e => { apiError = e.message })
+      // Poll job status until completed or failed
+      const pollJob = async (): Promise<GenerateResult | null> => {
+        while (true) {
+          await new Promise(r => setTimeout(r, 2000))
+          try {
+            const job = await api.getJobStatus(requestId)
+            if (job.status === 'completed') return job.result as GenerateResult
+            if (job.status === 'failed') throw new Error(job.error || 'Generation failed')
+          } catch (e: any) {
+            if (e.message?.includes('not found')) continue
+            throw e
+          }
+        }
+      }
 
-    // Wait for ready signal (or api error)
-    await Promise.race([readyPromise, apiCall])
-    stop()
+      // Race: either 'ready' from progress poll OR job completion
+      const data = await Promise.race([
+        readyPromise.then(() => null as GenerateResult | null),
+        pollJob(),
+      ])
+      stop()
 
-    if (apiError) {
-      setError(apiError); setStep(null); setLoading(false); return
-    }
+      setStep('ready')
+      setLoading(false)
 
-    // If API response already arrived, use it; otherwise fetch project for URL
-    setStep('ready')
-    setLoading(false)
-
-    if (data && (data as GenerateResult).url) {
-      setResult(data)
-      setPreview((data as GenerateResult).url)
-      onPreview((data as GenerateResult).url)
-    } else {
-      // API still in flight — get URL from project list
-      const updated = await api.listProjects()
-      const p = updated.find(x => x.name === name)
-      if (p?.url) { setPreview(p.url); onPreview(p.url) }
-    }
-    refreshProjects(); loadHistory(); loadBuildLog(); loadScreenshots()
-
-    // Wait for API to fully complete in background (ensures result is saved)
-    apiCall.then(() => {
-      if (data) setResult(data as GenerateResult)
+      if (data?.url) {
+        setResult(data)
+        setPreview(data.url)
+        onPreview(data.url)
+      } else {
+        const updated = await api.listProjects()
+        const p = updated.find(x => x.name === name)
+        if (p?.url) { setPreview(p.url); onPreview(p.url) }
+      }
       refreshProjects(); loadHistory(); loadBuildLog(); loadScreenshots()
-    })
+
+    } catch (e: any) {
+      setError(e.message); setStep(null); setLoading(false)
+      setRightTab('log')  // Stay on log tab to show what happened
+      loadBuildLog()
+    }
   }
+
+  // Reconnect to a running/failed job, or clear stale loading state for completed jobs
+  useEffect(() => {
+    if (!name) return
+    let cancelled = false
+    const reconnect = async () => {
+      try {
+        const { id, log } = await api.getProgressByProject(name) as any
+        if (cancelled || !id) {
+          // No active job for this project — clear any stale loading state
+          if (loading) { setLoading(false); setStep(null); setLog([]) }
+          return
+        }
+        const job = await api.getJobStatus(id)
+        if (cancelled) return
+
+        // Job already completed — clear stale loading state, show preview
+        if (job.status === 'completed') {
+          setLoading(false); setStep(null); setLog([])
+          // Ensure preview shows the running app
+          const updated = await api.listProjects()
+          const p = updated.find(x => x.name === name)
+          if (p?.url) { setPreview(p.url); onPreview(p.url) }
+          refreshProjects(); loadBuildLog()
+          return
+        }
+
+        // Job failed — show error
+        if (job.status === 'failed') {
+          setLoading(false); setStep(null)
+          if (log?.length) {
+            const { logLines } = parseMessages(log)
+            setLog(logLines)
+          }
+          setError(job.error || 'Generation failed')
+          setRightTab('log')
+          loadBuildLog()
+          return
+        }
+
+        // Job is still running — reconnect to it
+        if (job.status === 'running' && log?.length) {
+          setLoading(true)
+          setRightTab('log')
+          const { lastStep, logLines } = parseMessages(log)
+          setStep(lastStep); setLog(logLines)
+
+          const { promise: readyPromise, stop } = pollUntilReady(id)
+          const pollJob = async (): Promise<any> => {
+            while (true) {
+              await new Promise(r => setTimeout(r, 2000))
+              if (cancelled) return null
+              try {
+                const j = await api.getJobStatus(id)
+                if (j.status === 'completed') return j.result
+                if (j.status === 'failed') throw new Error(j.error || 'Generation failed')
+              } catch (e: any) {
+                if (e.message?.includes('not found')) continue
+                throw e
+              }
+            }
+          }
+          const data = await Promise.race([
+            readyPromise.then(() => null),
+            pollJob(),
+          ])
+          stop()
+          if (cancelled) return
+          setStep('ready')
+          setLoading(false)
+          if (data?.url) {
+            setResult(data); setPreview(data.url); onPreview(data.url)
+          } else {
+            const updated = await api.listProjects()
+            const p = updated.find(x => x.name === name)
+            if (p?.url) { setPreview(p.url); onPreview(p.url) }
+          }
+          refreshProjects(); loadHistory(); loadBuildLog(); loadScreenshots()
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setLoading(false)
+          if (e.message && !e.message.includes('not found')) setError(e.message)
+        }
+      }
+    }
+    reconnect()
+    return () => { cancelled = true }
+  }, [name])
 
   const previewDraft = async () => {
     if (!prompt.trim() || draftLoading || loading) return
@@ -306,9 +426,11 @@ export default function ProjectDetailPage() {
   }
 
   const generate = async () => {
-    if ((!prompt.trim() && !figmaUrl.trim()) || loading) return
+    if ((!prompt.trim() && !figmaUrl.trim() && !instructions.trim()) || loading) return
+    // If only instructions were provided (no prompt), use a generic prompt
+    const effectivePrompt = prompt.trim() || (instructions.trim() ? 'Please create this web app using the instructions provided.' : '')
     await runWithProgress(
-      () => api.generate(prompt.trim(), name, figmaUrl.trim() || undefined, instructions.trim() || undefined),
+      () => api.generate(effectivePrompt, name, figmaUrl.trim() || undefined, instructions.trim() || undefined),
       !!figmaUrl.trim()
     )
   }
@@ -321,46 +443,14 @@ export default function ProjectDetailPage() {
     )
   }
 
-  const startServer = async () => {
-    if (!name) return; setBusy(true)
-    try {
-      const r = await api.start(name)
-      if (r.url) { setPreview(r.url); onPreview(r.url) }
-      refreshProjects()
-    } catch (e: any) { setError(e.message) }
-    finally { setBusy(false) }
-  }
-
-  const stopServer = async () => {
-    if (!name) return; setBusy(true)
-    try { await api.stop(name); refreshProjects() }
-    catch {} finally { setBusy(false) }
-  }
-
-  const deleteApp = () => {
-    if (!name) return
-    setConfirmDel(true)
-  }
-
-  const doDeleteApp = async () => {
-    setConfirmDel(false)
-    if (!name) return
-    setDelApp(true)
-    try {
-      await api.stop(name); setPreview(null); setResult(null)
-      refreshProjects(); loadHistory()
-    } catch (e: any) { setError(e.message) }
-    finally { setDelApp(false) }
-  }
-
   const dockerBuildImage = async () => {
     if (!name) return
     setDockerBusy('build'); setDockerLog([]); setRightTab('docker')
     try {
-      // Poll progress while building
+      // Poll progress using project-scoped endpoint
       const pollTimer = setInterval(async () => {
         try {
-          const r = await fetch('/api/generate/progress/latest')
+          const r = await fetch(`/api/generate/progress/project/${name}`)
           if (!r.ok) return
           const d = await r.json()
           const lines: string[] = (d.log || [])
@@ -373,8 +463,10 @@ export default function ProjectDetailPage() {
       const result = await api.buildDockerImage(name)
       clearInterval(pollTimer)
       setDocker(result)
+      loadDockerStatus()
     } catch (e: any) {
       setDockerLog(prev => [...prev, `Error: ${e.message}`])
+      loadDockerStatus()
     } finally { setDockerBusy(null) }
   }
 
@@ -412,7 +504,7 @@ export default function ProjectDetailPage() {
     finally { setTimeout(() => setDockerBusy(null), 1500) }
   }
 
-  const canGenerate = (prompt.trim().length > 0 || figmaUrl.trim().length > 0) && !loading
+  const canGenerate = (prompt.trim().length > 0 || figmaUrl.trim().length > 0 || instructions.trim().length > 0) && !loading
   const isRunning   = project?.running ?? false
   const hasApp      = project?.hasApp ?? false
 
@@ -428,49 +520,14 @@ export default function ProjectDetailPage() {
             <div className="min-w-0 flex-1">
               <h2 className="font-bold text-slate-800 text-base truncate">{name}</h2>
               {isRunning
-                ? <div className="mt-1 space-y-0.5">
-                    <span className="badge-running inline-flex">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Running
-                    </span>
-                    {project?.url && (
-                      <button onClick={() => { setPreview(project.url!); onPreview(project.url!) }}
-                        className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 w-full truncate">
-                        <ExternalLink size={10} />
-                        <span className="truncate font-mono">{project.url}</span>
-                      </button>
-                    )}
-                  </div>
-                : <span className="badge-stopped mt-1 inline-flex">Stopped</span>
+                ? <span className="badge-running mt-1 inline-flex">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Running
+                  </span>
+                : hasApp
+                  ? <span className="badge-stopped mt-1 inline-flex">Stopped</span>
+                  : null
               }
             </div>
-
-            {/* Server controls — disabled when sidebar is busy */}
-            {hasApp && (
-              <div className="flex gap-1.5 flex-shrink-0">
-                {isSidebarBusy
-                  ? <div className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                      <span className="w-2 h-2 rounded-full border border-amber-400 border-t-transparent animate-spin" />
-                      In progress…
-                    </div>
-                  : <>
-                      {isRunning
-                        ? <button onClick={stopServer} disabled={busyServer || loading}
-                            className="btn-ghost p-1.5" title="Stop server">
-                            {busyServer ? <span className="w-3 h-3 rounded-full border border-slate-400 border-t-transparent animate-spin" /> : <Square size={13} />}
-                          </button>
-                        : <button onClick={startServer} disabled={busyServer || loading}
-                            className="btn-success p-1.5" title="Start server">
-                            {busyServer ? <span className="w-3 h-3 rounded-full border border-emerald-400 border-t-transparent animate-spin" /> : <Play size={13} />}
-                          </button>
-                      }
-                      <button onClick={deleteApp} disabled={deletingApp || loading}
-                        className="btn-danger p-1.5" title="Delete app files">
-                        {deletingApp ? <span className="w-3 h-3 rounded-full border border-red-400 border-t-transparent animate-spin" /> : <Trash2 size={13} />}
-                      </button>
-                    </>
-                }
-              </div>
-            )}
           </div>
         </div>
 
@@ -664,12 +721,18 @@ export default function ProjectDetailPage() {
               {result && <><CheckCircle size={13} className="text-emerald-600" /><span className="text-xs text-emerald-700 font-medium">{result.title}</span></>}
               <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/app/${name}/`).then(() => { setSandboxCopied(true); setTimeout(() => setSandboxCopied(false), 2000) }) }}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-700 hover:bg-indigo-600 text-white transition-colors">
-                {sandboxCopied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Share Preview</>}
+                {sandboxCopied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Copy App Link</>}
               </button>
               <button onClick={() => window.open(`/app/${name}/`, '_blank')}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 transition-colors">
-                <Layers size={11} /> Open Sandbox
+                <ExternalLink size={11} /> Open App
               </button>
+              {docker?.containerStatus === 'running' && docker.containerUrl && (
+                <button onClick={() => window.open(docker.containerUrl!, '_blank')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 transition-colors">
+                  <Layers size={11} /> Open Docker App
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -732,7 +795,7 @@ export default function ProjectDetailPage() {
           )}
 
           {/* Preview */}
-          {rightTab === 'preview' && <PreviewFrame url={previewUrl} loading={loading} />}
+          {rightTab === 'preview' && <PreviewFrame url={previewUrl} loading={loading} step={step} />}
 
           {/* Build Log — persisted runs oldest→newest, live run appended at bottom */}
           {rightTab === 'log' && (
@@ -1103,16 +1166,6 @@ export default function ProjectDetailPage() {
           onClose={() => setViewInstructions(null)}
         />
       )}
-      <ConfirmDialog
-        open={confirmDelete}
-        title={`Delete app files for "${name}"?`}
-        message="The generated app files will be permanently removed."
-        details={['Stops the running dev server', 'Deletes all generated files', 'Cannot be undone']}
-        confirmLabel="Delete"
-        danger
-        onConfirm={doDeleteApp}
-        onCancel={() => setConfirmDel(false)}
-      />
     </>
   )
 }

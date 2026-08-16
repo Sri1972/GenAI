@@ -54,6 +54,27 @@ export const api = {
   delete: (name: string) =>
     request<{ deleted: string }>(`/api/delete/${name}`, { method: 'DELETE' }),
 
+  rename: (name: string, newName: string) =>
+    request<{ name: string; oldName: string }>(`/api/projects/${name}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_name: newName }),
+    }),
+
+  getJobStatus: (requestId: string) =>
+    request<{ requestId: string; status: string; projectName?: string; result?: any; error?: string }>(
+      `/api/jobs/${requestId}`
+    ),
+
+  getActiveJobs: () =>
+    request<{ jobs: { requestId: string; status: string; projectName?: string }[] }>('/api/jobs'),
+
+  getProgressByProject: (projectName: string) =>
+    request<{ id: string; log: string[] }>(`/api/generate/progress/project/${projectName}`),
+
+  getProgress: (requestId: string) =>
+    request<{ log: string[] }>(`/api/generate/progress/${requestId}`),
+
   refine: (projectName: string, prompt: string, comment?: string, instructions?: string, architecture?: Record<string, any>) =>
     request<GenerateResult>(`/api/refine/${projectName}`, {
       method: 'POST',

@@ -58,14 +58,24 @@ def _save_container_ports(ports: dict):
     )
 
 
+def _docker_used_ports() -> set:
+    """Get all host ports currently mapped by Docker containers."""
+    ok, out = _docker(["ps", "--format", "{{.Ports}}"], timeout=10)
+    if not ok:
+        return set()
+    import re
+    return set(int(m) for m in re.findall(r"0\.0\.0\.0:(\d+)->", out))
+
+
 def _assign_container_port(project_name: str) -> int:
     ports = _load_container_ports()
+    docker_ports = _docker_used_ports()
     if project_name in ports:
-        # Verify the saved port is still free; keep it if so
-        if _port_is_free(ports[project_name]):
-            return ports[project_name]
+        p = ports[project_name]
+        if _port_is_free(p) and p not in docker_ports:
+            return p
     # Find the lowest free port starting from _CONTAINER_PORT_START
-    used = set(ports.values())
+    used = set(ports.values()) | docker_ports
     port = _CONTAINER_PORT_START
     while not _port_is_free(port) or port in used:
         port += 1
@@ -114,9 +124,11 @@ def _docker(args: list, timeout: int = 60, cwd: str | None = None) -> tuple[bool
     try:
         r = subprocess.run(
             ["docker"] + args,
-            capture_output=True, text=True, timeout=timeout, cwd=cwd,
+            capture_output=True, timeout=timeout, cwd=cwd,
         )
-        return r.returncode == 0, (r.stdout + r.stderr).strip()
+        stdout = r.stdout.decode("utf-8", errors="replace") if r.stdout else ""
+        stderr = r.stderr.decode("utf-8", errors="replace") if r.stderr else ""
+        return r.returncode == 0, (stdout + stderr).strip()
     except FileNotFoundError:
         return False, "Docker not found. Is Docker Desktop installed and running?"
     except subprocess.TimeoutExpired:
@@ -281,9 +293,16 @@ def build_image(project_name: str, project_dir: Path, progress=None) -> tuple[bo
                 shutil.copy2(str(src), str(bdir / fname))
                 copied_files.append(fname)
 
+        # Ensure python-multipart is in requirements (FastAPI needs it for form data)
+        req_file = bdir / "requirements.txt"
+        if req_file.exists():
+            req_text = req_file.read_text(encoding="utf-8")
+            if "python-multipart" not in req_text:
+                req_file.write_text(req_text.rstrip() + "\npython-multipart\n", encoding="utf-8")
+
         # Build COPY lines for all files that exist
         copy_lines = "COPY requirements.txt .\n"
-        copy_lines += "RUN pip install --no-cache-dir -r requirements.txt\n"
+        copy_lines += "RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements.txt\n"
         copy_lines += "COPY dist/ /app/dist/\n"
         for fname in copied_files:
             if fname != "requirements.txt":

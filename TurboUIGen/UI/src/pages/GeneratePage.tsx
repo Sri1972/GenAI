@@ -83,20 +83,25 @@ export default function GeneratePage({ onGenerated, onRefreshProjects }: Props) 
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
   }
 
-  const startPolling = () => {
+  const requestIdRef = useRef<string | null>(null)
+
+  const startPolling = (requestId?: string) => {
     stopPolling()
     setElapsed(0)
 
     // Elapsed-time ticker
     timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000)
 
-    // Progress log poller — hits /api/generate/progress/latest every 1.5s
+    // Progress log poller — uses request-specific endpoint when available
     pollRef.current = setInterval(async () => {
       try {
-        const data = await fetch('/api/generate/progress/latest').then(r => r.json()) as { log: string[] }
+        const rid = requestId || requestIdRef.current
+        const url = rid
+          ? `/api/generate/progress/${rid}`
+          : '/api/generate/progress/latest'
+        const data = await fetch(url).then(r => r.json()) as { log: string[] }
         if (data.log?.length) {
           setLiveLog(data.log)
-          // Derive the coarse step from the last log entry
           const last = data.log[data.log.length - 1] ?? ''
           if (last.includes('ready') || last.includes('Vite server ready')) setStep('ready')
           else if (last.includes('start') || last.includes('Vite')) setStep('start')
@@ -118,9 +123,29 @@ export default function GeneratePage({ onGenerated, onRefreshProjects }: Props) 
     setPreview(null)
     setLiveLog([])
     setStep('llm')
-    startPolling()
+
     try {
-      const data = await api.generate(prompt.trim())
+      // Fire-and-forget: returns immediately with requestId
+      const { requestId } = await api.generate(prompt.trim()) as any
+      requestIdRef.current = requestId
+      startPolling(requestId)
+
+      // Poll job status until completed or failed
+      const pollJob = async (): Promise<any> => {
+        while (true) {
+          await new Promise(r => setTimeout(r, 2000))
+          try {
+            const job = await api.getJobStatus(requestId)
+            if (job.status === 'completed') return job.result
+            if (job.status === 'failed') throw new Error(job.error || 'Generation failed')
+          } catch (e: any) {
+            if (e.message?.includes('not found')) continue
+            throw e
+          }
+        }
+      }
+
+      const data = await pollJob()
       setStep('ready')
       setResult(data)
       setPreview(data.url)
@@ -132,6 +157,7 @@ export default function GeneratePage({ onGenerated, onRefreshProjects }: Props) 
     } finally {
       setLoading(false)
       stopPolling()
+      requestIdRef.current = null
     }
   }
 

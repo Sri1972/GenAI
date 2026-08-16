@@ -102,11 +102,14 @@ def _get_bedrock_client():
         _bedrock_client = AnthropicBedrock(
             aws_profile=BEDROCK_PROFILE,
             aws_region=BEDROCK_REGION,
-            timeout=httpx.Timeout(
-                connect=30.0,
-                read=float(LITELLM_TIMEOUT),
-                write=60.0,
-                pool=30.0,
+            http_client=httpx.Client(
+                verify=_get_ssl_context(),
+                timeout=httpx.Timeout(
+                    connect=30.0,
+                    read=float(LITELLM_TIMEOUT),
+                    write=60.0,
+                    pool=30.0,
+                ),
             ),
         )
     return _bedrock_client
@@ -147,13 +150,14 @@ def _call_bedrock(
                         parts.append({"type": "text", "text": item["text"]})
                     elif item.get("type") == "image_url":
                         url = item["image_url"]["url"]
-                        if url.startswith("data:image/png;base64,"):
-                            b64_data = url.split(",", 1)[1]
+                        if url.startswith("data:image/"):
+                            header, b64_data = url.split(",", 1)
+                            media_type = header.split(";")[0].replace("data:", "")
                             parts.append({
                                 "type": "image",
                                 "source": {
                                     "type": "base64",
-                                    "media_type": "image/png",
+                                    "media_type": media_type,
                                     "data": b64_data,
                                 },
                             })
