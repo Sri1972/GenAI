@@ -179,6 +179,9 @@ def _build_metadata():
                 "list": f"/api/data/{table}",
                 "byId": f"/api/data/{table}/{{id}}",
                 "aggregate": f"/api/data/{table}/aggregate",
+                "create": f"/api/data/{table}",
+                "update": f"/api/data/{table}/{{id}}",
+                "delete": f"/api/data/{table}/{{id}}",
             },
             "queryParams": {
                 "list": {
@@ -335,6 +338,106 @@ async def get_table_aggregate(
         row = conn.execute(query, params).fetchone()
         conn.close()
         return {"value": row["_value"]}
+
+
+# --- Generic CRUD (Create / Update / Delete) Endpoints ---
+
+@app.post("/api/data/{table}")
+async def create_row(table: str, request: Request):
+    """Insert a new row into a table. Body: JSON object with column:value pairs."""
+    tables = _get_tables()
+    if table not in tables:
+        raise HTTPException(status_code=404, detail=f"Table '{table}' not found")
+
+    body = await request.json()
+    if not body or not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+
+    # Validate columns exist
+    schema = _get_table_schema(table)
+    valid_cols = {col["name"] for col in schema}
+    cols = [k for k in body.keys() if k in valid_cols]
+    if not cols:
+        raise HTTPException(status_code=400, detail="No valid columns provided")
+
+    values = [body[c] for c in cols]
+    placeholders = ", ".join("?" * len(cols))
+    col_list = ", ".join(f"[{c}]" for c in cols)
+
+    conn = _get_db()
+    try:
+        cursor = conn.execute(f"INSERT INTO [{table}] ({col_list}) VALUES ({placeholders})", values)
+        conn.commit()
+        row_id = cursor.lastrowid
+        row = conn.execute(f"SELECT *, rowid FROM [{table}] WHERE rowid = ?", [row_id]).fetchone()
+        conn.close()
+        return {"data": dict(row), "id": row_id}
+    except sqlite3.IntegrityError as e:
+        conn.close()
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/data/{table}/{row_id}")
+async def update_row(table: str, row_id: int, request: Request):
+    """Update an existing row. Body: JSON object with column:value pairs to update."""
+    tables = _get_tables()
+    if table not in tables:
+        raise HTTPException(status_code=404, detail=f"Table '{table}' not found")
+
+    body = await request.json()
+    if not body or not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+
+    schema = _get_table_schema(table)
+    valid_cols = {col["name"] for col in schema}
+    cols = [k for k in body.keys() if k in valid_cols]
+    if not cols:
+        raise HTTPException(status_code=400, detail="No valid columns provided")
+
+    set_clause = ", ".join(f"[{c}] = ?" for c in cols)
+    values = [body[c] for c in cols]
+
+    conn = _get_db()
+    # Check row exists
+    existing = conn.execute(f"SELECT rowid FROM [{table}] WHERE rowid = ?", [row_id]).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Row not found")
+
+    try:
+        conn.execute(f"UPDATE [{table}] SET {set_clause} WHERE rowid = ?", values + [row_id])
+        conn.commit()
+        row = conn.execute(f"SELECT *, rowid FROM [{table}] WHERE rowid = ?", [row_id]).fetchone()
+        conn.close()
+        return {"data": dict(row)}
+    except sqlite3.IntegrityError as e:
+        conn.close()
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/data/{table}/{row_id}")
+async def delete_row(table: str, row_id: int):
+    """Delete a row by rowid."""
+    tables = _get_tables()
+    if table not in tables:
+        raise HTTPException(status_code=404, detail=f"Table '{table}' not found")
+
+    conn = _get_db()
+    existing = conn.execute(f"SELECT rowid FROM [{table}] WHERE rowid = ?", [row_id]).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Row not found")
+
+    conn.execute(f"DELETE FROM [{table}] WHERE rowid = ?", [row_id])
+    conn.commit()
+    conn.close()
+    return {"deleted": True, "id": row_id}
 
 
 # --- Chat Endpoint ---

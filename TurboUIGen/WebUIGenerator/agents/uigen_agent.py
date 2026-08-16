@@ -1568,6 +1568,15 @@ def kill_server(project_name: str, forget_port: bool = False):
 def _augment_prompt(prompt: str) -> str:
     """Append mandatory system constraints to every generation prompt."""
     notes = [
+        "TECH STACK (MANDATORY — override any spec/TRD): "
+        "This platform generates React 18 + TypeScript + Tailwind CSS + Vite frontend apps "
+        "with a SQLite database + Python FastAPI backend. "
+        "If the instructions/specs mention other technologies (PostgreSQL, Redis, Express, "
+        "Node.js backend, MongoDB, AWS services, Docker, Kubernetes, etc.), IGNORE those "
+        "technology choices and use the TurboUIGen stack instead. "
+        "Extract the BUSINESS LOGIC, DATA MODELS, UI REQUIREMENTS, and USER FLOWS from "
+        "the specs — but implement them using our stack. "
+        "Do NOT generate backend code, Docker files, CI/CD pipelines, or infrastructure.",
         "DATA ARCHITECTURE (MANDATORY): ALL app data MUST live in a SQLite database. "
         "A schema.sql, seed.sql, and API server are ALWAYS created. "
         "The frontend NEVER contains hardcoded data — it fetches everything via REST API "
@@ -1585,11 +1594,13 @@ def _augment_prompt(prompt: str) -> str:
 
 
 def generate_project(prompt: str, progress=None, project_name_override: str | None = None,
-                     architecture: dict | None = None) -> dict:
+                     architecture: dict | None = None,
+                     reference_images: list[dict] | None = None) -> dict:
     """
     Generate a React/TS/Tailwind project from a prompt.
     progress(step: str) is called at each stage for CLI/UI feedback.
     architecture: pre-approved architecture from /api/draft (skips Stage 1 if provided).
+    reference_images: list of Figma screenshots [{name, base64_data}] for visual fidelity.
     Returns project info dict.
     """
     if not os.environ.get("LITELLM_API_BASE") and not os.environ.get("LITELLM_API_KEY"):
@@ -1645,6 +1656,8 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
         orchestrator.existing_files = existing_files
     if architecture:
         orchestrator.approved_architecture = architecture
+    if reference_images:
+        orchestrator.reference_images = reference_images
     data = orchestrator.generate(_augment_prompt(prompt))
 
     if project_name_override:

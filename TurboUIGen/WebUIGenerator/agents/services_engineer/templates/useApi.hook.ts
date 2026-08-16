@@ -143,3 +143,52 @@ export async function apiMetadata(): Promise<{ tables: Array<{ table: string; ro
   if (!res.ok) throw new Error(`Metadata API error: ${res.status}`)
   return res.json()
 }
+
+// --- Mutation helpers (Create / Update / Delete) ---
+
+export async function apiPost<T = Record<string, unknown>>(
+  table: string,
+  body: Record<string, unknown>
+): Promise<{ data: T; id: number }> {
+  const res = await _fetchWithRetry(`${_API_BASE}/api/data/${table}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Error ${res.status}` }))
+    throw new Error(err.detail || `Create failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function apiPut<T = Record<string, unknown>>(
+  table: string,
+  id: number,
+  body: Record<string, unknown>
+): Promise<{ data: T }> {
+  const res = await _fetchWithRetry(`${_API_BASE}/api/data/${table}/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Error ${res.status}` }))
+    throw new Error(err.detail || `Update failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function apiDelete(
+  table: string,
+  id: number
+): Promise<{ deleted: boolean; id: number }> {
+  const res = await _fetchWithRetry(`${_API_BASE}/api/data/${table}/${id}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Error ${res.status}` }))
+    throw new Error(err.detail || `Delete failed: ${res.status}`)
+  }
+  return res.json()
+}

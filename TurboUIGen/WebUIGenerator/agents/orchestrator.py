@@ -82,6 +82,7 @@ class CrewOrchestrator:
         self.existing_context: dict[str, str] = {}  # set by caller for refinement
         self.existing_files: dict[str, str] = {}    # all existing project files (for selective regen)
         self.approved_architecture: dict | None = None  # pre-approved from /api/draft
+        self.reference_images: list[dict] | None = None  # Figma screenshots: [{name, base64_data}]
 
     _ESSENTIAL_INFRA = {"package.json", "index.html", "src/main.tsx"}
 
@@ -104,6 +105,249 @@ class CrewOrchestrator:
             truncated = content[:max_chars] if len(content) > max_chars else content
             parts.append(f"=== {key} ===\n{truncated}")
         return "\n\n".join(parts)
+
+    # ── Large-spec context extraction ────────────────────────────────────────
+
+    _LARGE_SPEC_THRESHOLD = 8000  # chars — beyond this, extract relevant sections
+
+    def _is_large_spec(self, user_prompt: str) -> bool:
+        """Detect whether user_prompt contains a large tech spec that should be sectioned."""
+        return len(user_prompt) > self._LARGE_SPEC_THRESHOLD
+
+    def _extract_sections(self, text: str) -> list[tuple[str, str, int]]:
+        """Split a large markdown document into (heading, body, start_pos) sections."""
+        import re as _re
+        sections: list[tuple[str, str, int]] = []
+        # Match markdown headings (## or ### level)
+        pattern = _re.compile(r'^(#{1,4})\s+(.+)', _re.MULTILINE)
+        matches = list(pattern.finditer(text))
+        for i, m in enumerate(matches):
+            heading = m.group(2).strip()
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            body = text[start:end].strip()
+            sections.append((heading, body, m.start()))
+        if not sections:
+            sections.append(("Full Document", text, 0))
+        return sections
+
+    # Markers emitted by the UI's InstructionsModal structured upload
+    _DOC_MARKERS = {
+        'prd': '## PRD — Product Requirements',
+        'trd': '## TRD — Technical Requirements',
+        'specs': '## Specs — Technical Specifications',
+        'notes': '## Additional Notes',
+    }
+
+    def _split_structured_docs(self, text: str) -> dict[str, str]:
+        """Split text by structured document markers if present. Returns {prd, trd, specs, notes, rest}."""
+        docs: dict[str, str] = {}
+        markers_found = [(k, text.find(m)) for k, m in self._DOC_MARKERS.items() if m in text]
+        if not markers_found:
+            return {'rest': text}
+        markers_found.sort(key=lambda x: x[1])
+        for i, (key, pos) in enumerate(markers_found):
+            start = pos + len(self._DOC_MARKERS[key])
+            end = markers_found[i + 1][1] if i + 1 < len(markers_found) else len(text)
+            # Strip separator lines
+            content = text[start:end].strip().removeprefix('---').strip()
+            docs[key] = content
+        # Text before first marker
+        before = text[:markers_found[0][1]].strip()
+        if before:
+            docs['rest'] = before
+        return docs
+
+    def _extract_structured(self, docs: dict[str, str], stage: str,
+                            page_name: str = "", page_desc: str = "") -> str:
+        """Route structured PRD/TRD/Specs documents to the right stage with budget control."""
+        budget = 25000
+        parts: list[str] = []
+        used = 0
+
+        def _add(label: str, content: str, max_chars: int):
+            nonlocal used
+            if not content:
+                return
+            chunk = f"## {label}\n\n{content[:max_chars]}"
+            if len(content) > max_chars:
+                chunk += "\n[…truncated]"
+            parts.append(chunk)
+            used += len(chunk)
+
+        # Include the "rest" (user's prompt text before the documents) first
+        rest = docs.get('rest', '')
+        if rest:
+            _add("App Description", rest, 3000)
+
+        prd = docs.get('prd', '')
+        trd = docs.get('trd', '')
+        specs = docs.get('specs', '')
+        notes = docs.get('notes', '')
+
+        if stage == "data_modeling":
+            # Data needs: TRD (architecture, data models), Specs (schema, API), PRD (context)
+            _add("Technical Requirements (TRD)", trd, 12000)
+            _add("Technical Specifications (data-relevant)", specs, 10000)
+            _add("Product Requirements (summary)", prd, 4000)
+        elif stage == "infrastructure":
+            # Infra needs: TRD (tech stack), PRD (overview)
+            _add("Technical Requirements (TRD)", trd, 8000)
+            _add("Product Requirements (overview)", prd, 5000)
+            _add("Technical Specifications (summary)", specs, 5000)
+        elif stage == "components":
+            # Components need: Specs (component design), PRD (feature context)
+            _add("Technical Specifications (components)", specs, 12000)
+            _add("Product Requirements (features)", prd, 6000)
+            _add("Technical Requirements (summary)", trd, 4000)
+        elif stage == "pages":
+            # Pages need: Specs (detailed page spec), PRD (user stories), TRD (context)
+            # For page-specific extraction, try to find relevant sub-sections
+            if page_name or page_desc:
+                page_specs = self._find_relevant_subsections(specs, page_name, page_desc, 12000)
+                page_prd = self._find_relevant_subsections(prd, page_name, page_desc, 6000)
+                _add(f"Specs (for {page_name})", page_specs, 12000)
+                _add(f"Product Requirements (for {page_name})", page_prd, 6000)
+            else:
+                _add("Technical Specifications", specs, 12000)
+                _add("Product Requirements", prd, 6000)
+            _add("Technical Requirements (summary)", trd, 4000)
+        else:
+            # Fallback: balanced mix
+            _add("Product Requirements", prd, 8000)
+            _add("Technical Requirements", trd, 8000)
+            _add("Technical Specifications", specs, 8000)
+
+        if notes:
+            _add("Additional Notes", notes, 3000)
+
+        return "\n\n".join(parts)
+
+    def _find_relevant_subsections(self, text: str, page_name: str, page_desc: str,
+                                   max_chars: int) -> str:
+        """Extract subsections of a document that are most relevant to a specific page."""
+        if not text or len(text) <= max_chars:
+            return text
+
+        sections = self._extract_sections(text)
+        # Score by relevance to page
+        page_words = set(re.sub(r'([A-Z])', r' \1', page_name).lower().split()) if page_name else set()
+        desc_words = set(page_desc.lower().split()) if page_desc else set()
+        all_keywords = {w for w in (page_words | desc_words) if len(w) > 3}
+
+        scored: list[tuple[float, str, str]] = []
+        for heading, body, _ in sections:
+            combined = (heading + " " + body[:300]).lower()
+            score = sum(2 for w in all_keywords if w in combined)
+            scored.append((score, heading, body))
+
+        scored.sort(key=lambda x: -x[0])
+        result_parts: list[str] = []
+        chars_used = 0
+        for score, heading, body in scored:
+            chunk = f"### {heading}\n{body}"
+            if chars_used + len(chunk) > max_chars:
+                remaining = max_chars - chars_used
+                if remaining > 300:
+                    result_parts.append(chunk[:remaining] + "\n[…]")
+                break
+            result_parts.append(chunk)
+            chars_used += len(chunk)
+
+        return "\n\n".join(result_parts) if result_parts else text[:max_chars]
+
+    def _extract_for_stage(self, user_prompt: str, stage: str,
+                           page_name: str = "", page_desc: str = "") -> str:
+        """Extract relevant portions of a large spec for a given pipeline stage.
+
+        For short prompts (< threshold), returns user_prompt unchanged.
+        For large specs, extracts only sections relevant to the current stage/page
+        to keep agent context focused and within effective attention bounds.
+
+        When structured documents (PRD/TRD/Specs) are detected, routes content
+        intelligently:
+          - data_modeling → TRD (full) + Specs (data sections) + PRD (summary)
+          - infrastructure → PRD (summary) + TRD (tech stack sections)
+          - components → Specs (component sections) + PRD (feature list)
+          - pages → Specs (relevant page sections) + PRD (relevant features)
+        """
+        if not self._is_large_spec(user_prompt):
+            return user_prompt
+
+        # Check for structured document format
+        structured = self._split_structured_docs(user_prompt)
+        if len(structured) > 1 or 'prd' in structured:
+            return self._extract_structured(structured, stage, page_name, page_desc)
+
+        sections = self._extract_sections(user_prompt)
+
+        # Keywords for relevance scoring by stage
+        _DATA_KW = {"data model", "database", "schema", "table", "entity", "column",
+                    "migration", "seed", "type", "interface", "enum", "foreign key",
+                    "index", "constraint"}
+        _FRONTEND_KW = {"frontend", "component", "page", "ui", "layout", "form",
+                        "route", "navigation", "sidebar", "header", "style", "css",
+                        "react", "hook", "store", "state"}
+        _API_KW = {"api", "endpoint", "rest", "request", "response", "auth",
+                   "middleware", "controller", "service", "rate limit", "status code"}
+        _INFRA_KW = {"docker", "deploy", "ci", "cd", "kubernetes", "terraform",
+                     "monitoring", "infrastructure", "nginx", "environment"}
+
+        stage_keywords: set[str] = set()
+        if stage == "data_modeling":
+            stage_keywords = _DATA_KW | _API_KW
+        elif stage == "infrastructure":
+            stage_keywords = _FRONTEND_KW | {"package", "config", "vite", "typescript"}
+        elif stage == "components":
+            stage_keywords = _FRONTEND_KW | {"chart", "d3", "map", "visualization", "component"}
+        elif stage == "pages":
+            stage_keywords = _FRONTEND_KW | _API_KW
+        elif stage == "integration":
+            stage_keywords = _FRONTEND_KW | _API_KW | {"import", "type", "error"}
+        else:
+            return user_prompt
+
+        # Score each section by keyword overlap
+        scored: list[tuple[float, str, str]] = []
+        for heading, body, _ in sections:
+            combined = (heading + " " + body[:500]).lower()
+            score = sum(1 for kw in stage_keywords if kw in combined)
+            # Boost if page name or page description words appear
+            if page_name:
+                page_words = set(re.sub(r'([A-Z])', r' \1', page_name).lower().split())
+                score += sum(2 for w in page_words if w in combined and len(w) > 3)
+            if page_desc:
+                desc_words = set(page_desc.lower().split())
+                score += sum(1 for w in desc_words if w in combined and len(w) > 3)
+            scored.append((score, heading, body))
+
+        # Sort by relevance and take the top sections that fit within budget
+        scored.sort(key=lambda x: -x[0])
+        budget = 20000  # chars budget for extracted context
+        parts: list[str] = []
+        used = 0
+
+        # Always include a short summary (first ~2000 chars as overview)
+        overview = user_prompt[:2000]
+        if len(user_prompt) > 2000:
+            overview += "\n\n[… spec continues — relevant sections extracted below …]\n"
+        parts.append(overview)
+        used += len(overview)
+
+        for score, heading, body in scored:
+            if score <= 0:
+                break
+            chunk = f"\n### {heading}\n{body}"
+            if used + len(chunk) > budget:
+                remaining = budget - used
+                if remaining > 500:
+                    chunk = chunk[:remaining] + "\n[…trimmed]"
+                else:
+                    break
+            parts.append(chunk)
+            used += len(chunk)
+
+        return "\n".join(parts)
 
     def generate(self, user_prompt: str) -> dict:
         """
@@ -177,9 +421,12 @@ You MUST include ALL existing pages in your architecture output (pages[] and nav
 plus any NEW pages the prompt requests. Do NOT remove existing pages.
 """
 
+        # Architecture gets the most context (needs full picture) but cap at 50k
+        arch_prompt = user_prompt[:50000] + ("…[spec truncated]" if len(user_prompt) > 50000 else "")
+
         prompt = f"""Design the complete app architecture for this application:
 
-{user_prompt}
+{arch_prompt}
 {existing_pages_section}
 Return a JSON object with this exact structure:
 {{
@@ -212,7 +459,27 @@ RULES:
 - hasAiFeatures: true if the app needs AI chat, NLQ, or LLM-powered features
 """
 
-        result = agent.generate(prompt, stage="architecture", json_mode=True, max_tokens=4000)
+        arch_images = None
+        if self.reference_images:
+            arch_images = [img["base64_data"] for img in self.reference_images]
+            prompt = (
+                "You are looking at screenshot(s) from a completed Figma design. "
+                "Your ONLY job is to EXTRACT — not redesign — the page structure from these screenshots.\n\n"
+                "RULES FOR FIGMA EXTRACTION:\n"
+                "- Each screenshot = one page. Count them and name them based on what you see.\n"
+                "- Page names must reflect the VISIBLE title/heading in each screenshot (e.g., 'Sales Overview', 'Vehicle Inventory').\n"
+                "- Page type must reflect EXACTLY what's shown: if you see charts → 'charts', a data table → 'data-table', etc.\n"
+                "- Page description must describe ONLY what is VISIBLE in the screenshot — list the specific charts, tables, KPI cards, etc.\n"
+                "  Example: 'Top row: 4 KPI cards. Below: grouped bar chart on left (60%), data table on right (40%). Bottom: donut chart left, horizontal bar chart right.'\n"
+                "- DO NOT add pages that aren't in the screenshots.\n"
+                "- DO NOT redesign or reinterpret what you see — describe it literally.\n"
+                "- For chart descriptions, be EXPLICIT about chart type: 'simple vertical bar chart' vs 'grouped bar chart' vs 'donut chart' vs 'line chart'.\n"
+                "  Count the bars per x-axis category: ONE bar = simple bar chart, MULTIPLE bars = grouped.\n\n"
+                + prompt
+            )
+
+        result = agent.generate(prompt, stage="architecture", json_mode=True,
+                                max_tokens=4000, images_b64=arch_images)
         self.artifacts["architecture"] = json.dumps(result, indent=2)
         self._p(f"crew:Architecture defined — {len(result.get('pages', []))} pages planned")
 
@@ -246,14 +513,35 @@ EXISTING seed.sql preview (preserve ALL existing seed data and ADD new):
 ```
 """
 
+        # When Figma screenshots are available, add data-model-to-visual mapping rules
+        figma_data_rules = ""
+        if self.reference_images:
+            figma_data_rules = """
+FIGMA VISUAL → DATA MODEL RULES (CRITICAL):
+Look at the attached screenshots. The data model MUST match the chart types shown:
+- SIMPLE bar chart (one bar per x-label) → table with ONE row per x-axis value.
+  Example: monthly_metrics (id, month, total_value, total_count) — one row per month.
+  Do NOT add a breakdown/category column that would imply grouping.
+- GROUPED bar chart (multiple bars per x-label) → table with a categorical breakdown column.
+  Example: metrics_by_category (id, month, category_name, value) — multiple rows per month.
+- DONUT/PIE chart → table with (category, value/percentage) per slice.
+- LINE chart → table with sequential x-values (dates/months) and y-value columns.
+- The chart type in the screenshot is the TRUTH. The title might mention categories,
+  but if there's only ONE bar per label in the visual, the data must be pre-aggregated.
+  Do NOT add breakdown columns unless the screenshot clearly shows multiple bars per label.
+"""
+
+        # Extract data-relevant sections from large specs
+        effective_prompt = self._extract_for_stage(user_prompt, "data_modeling")
+
         prompt = f"""Design the complete data layer for this application:
 
-App description: {user_prompt}
+App description: {effective_prompt}
 
 Architecture (from UX Architect):
 - Pages planned: {json.dumps(pages, indent=2)}
 - Data entities identified: {entities}
-{existing_schema_section}
+{existing_schema_section}{figma_data_rules}
 Generate a JSON object with:
 {{
   "files": {{
@@ -282,9 +570,14 @@ RULES:
   Seed it with 4-6 realistic KPI rows (e.g. Total Revenue, Units Sold, Active Users, etc.)
 """
 
+        # Pass screenshots to data modeler so it can see chart types and design matching schema
+        data_images = None
+        if self.reference_images:
+            data_images = [img["base64_data"] for img in self.reference_images]
+
         result = agent.generate(
             prompt, context=self._build_context(), stage="data_modeling",
-            json_mode=True, max_tokens=32000,
+            json_mode=True, max_tokens=32000, images_b64=data_images,
         )
         files = result.get("files", {})
         self.files.update(files)
@@ -365,10 +658,13 @@ CRITICAL RULES:
         self._p("crew:Stage 3/6 — React UI + Services building infrastructure…")
         agent = get_agent("react_ui")
 
+        # For large specs, only pass frontend/infra-relevant sections
+        effective_prompt = self._extract_for_stage(user_prompt, "infrastructure")
+
         prompt = f"""Generate the infrastructure files for this React application:
 
 App: {title}
-Description: {user_prompt}
+Description: {effective_prompt}
 
 Pages (use React.lazy for each):
 {json.dumps(pages, indent=2)}
@@ -505,9 +801,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
         from agents.prompts import PASS2_SYSTEM_PROMPT
 
+        # Extract component-relevant context for large specs
+        effective_prompt = self._extract_for_stage(user_prompt, "components")
+
         prompt = f"""Generate these shared components for a React/TypeScript app:
 
-App description: {user_prompt}
+App description: {effective_prompt}
 
 Components to generate:
 {chr(10).join(f"- src/components/{c}.tsx" for c in to_generate)}
@@ -701,7 +1000,7 @@ RULES:
 CHART-SPECIFIC RULES:
 - LINE CHARTS: If the spec mentions multiple dimensions (e.g. "top 5 makes" or "by region"),
   you MUST include one series entry per dimension. Shape data as one row per x-value with a
-  field per series. E.g. data=[{quarter:'Q1', Tesla:100, Toyota:80, BMW:60}] with 3 series entries.
+  field per series. E.g. data=[{quarter:'Q1', SeriesA:100, SeriesB:80, SeriesC:60}] with 3 series entries.
 - TABBED LAYOUT: When the spec says "two tabs" (e.g. "Tab 1 — Volume, Tab 2 — Revenue"), use
   layout='tabs' and give each tab a nested charts[] array. Each tab entry = {title:'Tab Label', charts:[...]}.
 - GROUPED-BAR: Must have series[] with one entry per bar group, and groupKey for the x-axis category.
@@ -874,17 +1173,34 @@ Current {page_name}.tsx:
         # Build pattern-specific guidance based on page type
         pattern_guidance = self._get_pattern_guidance(page_type, page_desc)
 
-        prompt = f"""Generate a complete, fully-working React page component.
-Design a UNIQUE layout tailored to the specific requirements below — do NOT follow a generic template.
+        figma_mode = bool(self.reference_images)
+        if figma_mode:
+            design_instruction = (
+                "Generate a complete, fully-working React page component.\n"
+                "REPLICATE the attached Figma screenshot EXACTLY — same layout, same chart types, same structure."
+            )
+        else:
+            design_instruction = (
+                "Generate a complete, fully-working React page component.\n"
+                "Design a UNIQUE layout tailored to the specific requirements below — do NOT follow a generic template."
+            )
+
+        # For large specs, extract only sections relevant to this specific page
+        effective_prompt = self._extract_for_stage(
+            user_prompt, "pages", page_name=page_name, page_desc=page_desc
+        )
+
+        prompt = f"""{design_instruction}
 
 Page: {page_name}
 Type: {page_type}
 Description: {page_desc}
 
-App description: {user_prompt}
+App description: {effective_prompt}
 {existing_page_section}
 
-Available database schema (use EXACT table/column names from here):
+Available database schema — use ONLY these exact table/column names. NEVER invent
+columns that are not listed here. If a column doesn't exist, do NOT filter by it:
 {self.artifacts.get('schema', '')[:3000]}
 
 Shared components available: {self.artifacts.get('components', '[]')}
@@ -894,13 +1210,28 @@ Shared components available: {self.artifacts.get('components', '[]')}
 Return JSON: {{"files": {{"src/pages/{page_name}.tsx": "<complete page code>"}}}}
 
 ═══ DATA FETCHING (CRITICAL) ═══
-- import {{ useApi, apiAggregate }} from '../hooks/useApi'
-- SYNTAX: const {{ data, loading, error }} = useApi<any[]>('table_name')
+- import {{ useApi, apiAggregate, apiPost, apiPut, apiDelete }} from '../hooks/useApi'
+- READ: const {{ data, loading, error, refetch }} = useApi<any[]>('table_name')
   Pass ONLY the SQL table name (e.g. 'documents', 'resources', 'timesheets').
   DO NOT pass a URL path. DO NOT write useApi('/api/data/...').
 - The API returns SNAKE_CASE field names matching SQL columns exactly.
   Access: row.doc_type, row.created_date (NOT row.docType, row.createdDate).
 - For aggregations: const result = await apiAggregate('table_name', {{ groupBy: 'column', agg: 'count' }})
+- CREATE: const result = await apiPost('table_name', {{ col1: value1, col2: value2 }})
+  Returns {{ data: insertedRow, id: newRowId }}. Call refetch() after to refresh the list.
+- UPDATE: const result = await apiPut('table_name', rowId, {{ col1: newValue }})
+  Returns {{ data: updatedRow }}. Call refetch() after to refresh the list.
+- DELETE: const result = await apiDelete('table_name', rowId)
+  Returns {{ deleted: true, id }}. Call refetch() after to refresh the list.
+- For forms/wizards that SAVE data: wrap submission in try/catch, show success toast or error.
+  Example:
+    const handleSave = async () => {{
+      try {{
+        await apiPost('expenses', {{ description, amount, date: new Date().toISOString() }})
+        refetch()  // refresh the data list
+        setShowForm(false)
+      }} catch (e: any) {{ setError(e.message) }}
+    }}
 - NEVER use raw fetch() for database data. NEVER import from '../data'.
 
 ═══ UI PATTERNS (use as building blocks, combine creatively) ═══
@@ -909,22 +1240,24 @@ Return JSON: {{"files": {{"src/pages/{page_name}.tsx": "<complete page code>"}}}
 ═══ COMPONENT IMPORTS (CRITICAL) ═══
 - You may ONLY import from these sources:
   • 'mobility-global-ds' — SearchBar, Badge, Card, Header, Sidebar, Footer, etc.
-  • '../hooks/useApi' — useApi, apiAggregate
+  • '../hooks/useApi' — useApi, apiAggregate, apiPost, apiPut, apiDelete
   • '../components/ExportToolbar' — ExportToolbar (always available)
   • 'd3' — import * as d3 from 'd3'
   • 'react' / 'react-router-dom' / 'lucide-react'
-- DO NOT import from '../components/DataTable', '../components/D3BarChart', or any
-  other custom component. These DO NOT EXIST. Build everything INLINE in the page file.
-  If you need a chart, build it inline with D3. If you need a table, build it inline with JSX.
+- DO NOT import from '../components/DataTable', '../components/D3BarChart',
+  '../components/WorldSalesMap', '../components/UsaMap', '../components/FilterDropdown',
+  or ANY other custom component. These DO NOT EXIST. Build everything INLINE in the page file.
+  If you need a chart, build it inline with D3. If you need a map, build it inline with D3 + topojson.
+  If you need a table, build it inline with JSX. If you need a dropdown, use a <select> element.
 - DO NOT create helper components in separate files. Everything goes in one page file.
   You CAN define sub-components (const MyChart = () => ...) at the top of the same file.
 
 ═══ D3 CHARTS (CRITICAL — prevent infinite loops) ═══
-- ALWAYS use this exact ResizeObserver pattern:
+- ALWAYS use this EXACT ResizeObserver pattern (DO NOT deviate — observe the PARENT, NOT the SVG):
   const ref = useRef<SVGSVGElement>(null)
   const [dims, setDims] = useState({{w:0, h:0}})
   useEffect(() => {{
-    const el = ref.current?.parentElement
+    const el = ref.current?.parentElement   // ← MUST be parentElement, NEVER ref.current directly
     if (!el) return
     const ro = new ResizeObserver(([e]) => {{
       const {{width}} = e.contentRect
@@ -932,7 +1265,7 @@ Return JSON: {{"files": {{"src/pages/{page_name}.tsx": "<complete page code>"}}}
     }})
     ro.observe(el)
     return () => ro.disconnect()
-  }}, [])  // ← EMPTY dependency array — observe once only
+  }}, [loading])  // ← depend on loading so observer sets up AFTER loading spinner is gone and SVGs mount
 - Draw in a SEPARATE useEffect that depends on [data, dims]:
   useEffect(() => {{
     if (!ref.current || dims.w === 0 || !data?.length) return
@@ -962,10 +1295,53 @@ Return JSON: {{"files": {{"src/pages/{page_name}.tsx": "<complete page code>"}}}
 - ALL data values from the API may be null — always null-guard: (row.field ?? 0), (row.field ?? '')
 """
 
+        # ── Match Figma screenshots to this page for visual reference ──────────
+        page_images: list[str] | None = None
+        if self.reference_images:
+            page_name_lower = page_name.lower().replace("_", " ").replace("-", " ")
+            matched = []
+            for img in self.reference_images:
+                img_name = img.get("name", "").lower().replace("_", " ").replace("-", " ")
+                if (page_name_lower in img_name or img_name in page_name_lower
+                        or any(w in img_name for w in page_name_lower.split() if len(w) > 3)):
+                    matched.append(img["base64_data"])
+            if matched:
+                page_images = matched
+            else:
+                page_images = [img["base64_data"] for img in self.reference_images]
+
+            if page_images:
+                prompt = (
+                    "═══ FIGMA REPLICATION MODE (THIS OVERRIDES ALL OTHER DESIGN DECISIONS) ═══\n"
+                    "You are a PIXEL-PERFECT REPLICATOR. The attached screenshot(s) show the EXACT design from Figma.\n"
+                    "Your job is to REPRODUCE what you see — NOT to design, NOT to improve, NOT to reinterpret.\n\n"
+                    "MANDATORY REPLICATION RULES:\n"
+                    "1. CHART TYPES — look at the screenshot and match EXACTLY:\n"
+                    "   • Count bars per x-axis label: ONE bar = simple bar chart, MULTIPLE thin bars = grouped bar chart\n"
+                    "   • Ring/hollow circle = donut chart. Full filled circle = pie chart.\n"
+                    "   • Horizontal bars = horizontal bar chart. Vertical bars = vertical bar chart.\n"
+                    "   • Line with area fill = area chart. Line without fill = line chart.\n"
+                    "   • DO NOT change a simple bar chart into a grouped bar chart just because the title mentions categories.\n"
+                    "   • DO NOT change chart types based on data model — match the VISUAL, period.\n"
+                    "2. LAYOUT — replicate the exact grid structure:\n"
+                    "   • Count KPI cards in the top row and match the number exactly.\n"
+                    "   • Match column splits (60/40, 50/50, 70/30) as shown.\n"
+                    "   • Match the number of rows and sections exactly.\n"
+                    "3. COLORS — extract hex colors from the screenshot for charts, backgrounds, cards, text.\n"
+                    "4. DATA — use ONLY columns from the schema. If you need a value shown in the screenshot\n"
+                    "   that doesn't match a column, use the closest available column. NEVER invent columns.\n"
+                    "5. COMPONENTS — match what's visible. If the screenshot shows a simple table, build a simple table.\n"
+                    "   Don't add filters, search bars, or features not visible in the screenshot.\n\n"
+                    "When in doubt: match the screenshot. The screenshot is ALWAYS right.\n"
+                    "═══════════════════════════════════════════════════════════════════════════\n\n"
+                    + prompt
+                )
+
         try:
             result = agent.generate(
                 prompt, context=self._build_context(max_chars=6000),
                 stage="pages", json_mode=True, max_tokens=32000,
+                images_b64=page_images,
             )
         except RuntimeError as e:
             if "truncated" in str(e).lower() or "two-pass" in str(e).lower():
@@ -992,6 +1368,7 @@ RULES:
                 result = agent.generate(
                     simplified_prompt, context="",
                     stage="pages", json_mode=True, max_tokens=32000,
+                    images_b64=page_images,
                 )
             else:
                 raise
@@ -1172,21 +1549,34 @@ RULES:
 
                 for comp_name in local_imports:
                     if comp_name not in allowed_components:
-                        # Remove the import line entirely
-                        content = re.sub(
-                            r"^import\s+.*?from\s+['\"]\.\.\/components\/" + re.escape(comp_name) + r"['\"].*\n?",
-                            "", content, flags=re.MULTILINE,
+                        # Check if the component is defined inline in this file
+                        inline_def = re.search(
+                            r"(?:function|const)\s+" + re.escape(comp_name) + r"\b",
+                            content,
                         )
-                        # Also remove any JSX usage of this component (replace with a div placeholder)
-                        content = re.sub(
-                            r"<" + re.escape(comp_name) + r"\s[^/>]*/>",
-                            "/* removed: " + comp_name + " */", content,
-                        )
-                        content = re.sub(
-                            r"<" + re.escape(comp_name) + r"[\s>].*?</" + re.escape(comp_name) + r">",
-                            "/* removed: " + comp_name + " */", content, flags=re.DOTALL,
-                        )
-                        print(f"  [integration] Removed missing component import '{comp_name}' from {file_path}", flush=True)
+                        if inline_def:
+                            # Component is defined locally — just remove the import
+                            content = re.sub(
+                                r"^import\s+.*?from\s+['\"]\.\.\/components\/" + re.escape(comp_name) + r"['\"].*\n?",
+                                "", content, flags=re.MULTILINE,
+                            )
+                            print(f"  [integration] Removed import for inline component '{comp_name}' from {file_path}", flush=True)
+                        else:
+                            # Component file doesn't exist — create a stub file so the import resolves
+                            stub_path = f"src/components/{comp_name}.tsx"
+                            stub_content = (
+                                "import React from 'react'\n\n"
+                                f"export default function {comp_name}(props: any) {{\n"
+                                f"  return (\n"
+                                f"    <div className=\"w-full h-64 bg-slate-50 border border-dashed border-slate-300 rounded-lg flex items-center justify-center\">\n"
+                                f"      <p className=\"text-slate-500 text-sm\">{comp_name} — component placeholder</p>\n"
+                                f"    </div>\n"
+                                f"  )\n"
+                                f"}}\n"
+                            )
+                            self.files[stub_path] = stub_content
+                            allowed_components.add(comp_name)
+                            print(f"  [integration] Created stub for missing component '{comp_name}' referenced in {file_path}", flush=True)
 
             # ── Fix 8: Prevent D3 ResizeObserver infinite loops ────────────────
             if "ResizeObserver" in content and "setDims" not in content:
@@ -1287,6 +1677,10 @@ RULES:
   - Progress bars: <div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-blue-500 h-2 rounded-full" style={{width:`${row.completion}%`}}/></div>
   - EXPORT: import { ExportToolbar } from '../components/ExportToolbar'
     <ExportToolbar data={filtered} columns={[{key:'name',header:'Name'},{key:'budget',header:'Budget',format:'currency'}]} title="Title" filename="export" />
+  - ROW ACTIONS: Add Edit/Delete buttons in the last column of each row.
+    Edit opens a modal/inline form pre-filled with row data → apiPut on save.
+    Delete shows confirm dialog → apiDelete on confirm → refetch().
+  - ADD NEW: "Add" button above the table opens a blank form → apiPost on save → refetch().
 """)
 
         # Chart/visualization pattern
@@ -1295,7 +1689,7 @@ RULES:
 ▸ D3 CHARTS (follow this exact pattern to avoid infinite loops):
   const chartRef = useRef<SVGSVGElement>(null)
   const [chartDims, setChartDims] = useState({w:0, h:0})
-  // Step 1: Observe size ONCE (empty dep array!)
+  // Step 1: Observe size (depend on loading so it re-runs after SVGs mount)
   useEffect(() => {
     const el = chartRef.current?.parentElement
     if (!el) return
@@ -1305,7 +1699,7 @@ RULES:
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [loading])
   // Step 2: Draw when data OR dims change (NEVER set state here!)
   useEffect(() => {
     if (!chartRef.current || chartDims.w === 0 || !data?.length) return
@@ -1353,7 +1747,40 @@ RULES:
   - Progress bar: steps.map((s,i) => <div className={i <= currentStep ? 'bg-indigo-500' : 'bg-gray-200'} />)
   - Navigation: "Back" disables on step 0, "Next" validates before advancing
   - Form state: useState<Record<string,any>>({}) accumulates across steps
-  - Final step: review/summary showing all collected data
+  - Final step: review/summary showing all collected data, THEN SAVE:
+    const handleSubmit = async () => {
+      setSaving(true)
+      try {
+        await apiPost('table_name', formData)
+        refetch() // refresh list data
+        navigate('/success-page') // or close modal
+      } catch (e: any) { setError(e.message) }
+      finally { setSaving(false) }
+    }
+""")
+
+        # Save/CRUD form pattern (any page with add/edit/delete functionality)
+        if any(w in desc_lower for w in ["add", "edit", "save", "create", "new", "submit", "manage", "crud", "settings", "profile"]):
+            patterns.append("""
+▸ FORMS THAT SAVE DATA (CRITICAL — all forms must persist to backend):
+  - import { apiPost, apiPut, apiDelete } from '../hooks/useApi'
+  - CREATE: const handleCreate = async (formData) => {
+      try { await apiPost('table_name', formData); refetch() } catch(e) { setError(e.message) }
+    }
+  - UPDATE: const handleUpdate = async (id, formData) => {
+      try { await apiPut('table_name', id, formData); refetch() } catch(e) { setError(e.message) }
+    }
+  - DELETE: const handleDelete = async (id) => {
+      if (!confirm('Delete this item?')) return
+      try { await apiDelete('table_name', id); refetch() } catch(e) { setError(e.message) }
+    }
+  - Use refetch() from useApi to refresh the data list after any mutation.
+  - Show loading state on submit buttons: disabled={saving} with spinner
+  - Show success feedback: toast/banner "Saved successfully" that auto-dismisses
+  - Show error feedback: red banner with error message from catch block
+  - For inline editing: track editingId state, show input fields for that row, save on blur/Enter
+  - For modal forms: useState<boolean>(false) for showModal, render form inside modal
+  - NEVER leave forms as no-ops or local-state-only. ALL forms MUST call apiPost/apiPut/apiDelete.
 """)
 
         # AI chat pattern
