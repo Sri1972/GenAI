@@ -94,9 +94,15 @@ export default function ProjectDetailPage() {
   }
 
   // Redirect to home if project doesn't exist (e.g., deleted then page refreshed)
+  // Delay slightly to allow freshly-created projects to appear after refresh
   useEffect(() => {
     if (name && projects.length > 0 && !project) {
-      navigate('/', { replace: true })
+      const timer = setTimeout(() => {
+        if (!projects.find((p: Project) => p.name === name)) {
+          navigate('/', { replace: true })
+        }
+      }, 1500)
+      return () => clearTimeout(timer)
     }
   }, [name, projects, project])
 
@@ -133,12 +139,6 @@ export default function ProjectDetailPage() {
       setPreview(p.url)
     } else {
       setPreview(null)
-      if (p?.hasApp && name) {
-        api.start(name).then(r => {
-          if (r.url) { setPreview(r.url); onPreview(r.url) }
-          refreshProjects()
-        }).catch(() => {})
-      }
     }
   }, [name])
 

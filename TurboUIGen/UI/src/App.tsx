@@ -31,7 +31,7 @@ interface ProjectsCtx {
   genMap:      Record<string, GenState>
   previewUrl:  string | null
   setPreviewUrl: (url: string | null) => void
-  refresh:     () => void
+  refresh:     () => Promise<void>
   setBusy:     (name: string, action: string | null) => void
   setGenState: (name: string, state: Partial<GenState>) => void
   clearGen:    (name: string) => void
@@ -39,7 +39,7 @@ interface ProjectsCtx {
 
 export const ProjectsContext = createContext<ProjectsCtx>({
   projects: [], busyMap: {}, genMap: {}, previewUrl: null, setPreviewUrl: () => {},
-  refresh: () => {}, setBusy: () => {},
+  refresh: async () => {}, setBusy: () => {},
   setGenState: () => {}, clearGen: () => {},
 })
 export const useProjectsCtx = () => useContext(ProjectsContext)

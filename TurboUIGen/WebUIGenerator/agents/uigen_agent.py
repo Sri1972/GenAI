@@ -552,7 +552,8 @@ def _start_vite(project_dir: Path, port: int) -> subprocess.Popen:
     log_file = open(str(project_dir / "vite.log"), "w", encoding="utf-8", errors="replace")
     kwargs: dict = {"cwd": str(project_dir), "env": env, "stdout": log_file, "stderr": log_file}
     if os.name == "nt":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        # DETACHED_PROCESS makes the server survive TurboUIGen restarts
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
     return subprocess.Popen([str(node_exe), str(vite_js), "--port", str(port), "--host", "0.0.0.0"], **kwargs)
 
 
@@ -593,7 +594,8 @@ def _start_api_server(project_dir: Path, api_port: int = 8080) -> subprocess.Pop
     log_file = open(str(project_dir / "api_server.log"), "w", encoding="utf-8", errors="replace")
     kwargs: dict = {"cwd": cwd, "env": env, "stdout": log_file, "stderr": log_file}
     if os.name == "nt":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        # DETACHED_PROCESS makes the server survive TurboUIGen restarts
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
     proc = subprocess.Popen(["python", str(server_file)], **kwargs)
     print(f"[api_server] Started Python API server on port {api_port} (PID {proc.pid}, cwd={cwd})", flush=True)
     return proc
@@ -1837,6 +1839,10 @@ def start_project(project_name: str) -> dict:
         raise RuntimeError(f"Project '{project_name}' not found")
     if project_name in _dev_servers:
         port = _dev_ports[project_name]
+        return {"projectName": project_name, "port": port, "url": "/app/" + project_name + "/"}
+    # Check if a detached server from a previous session is still alive on the saved port
+    port = _dev_ports.get(project_name)
+    if port and _health_check(port, "react", project_name):
         return {"projectName": project_name, "port": port, "url": "/app/" + project_name + "/"}
     port = _dev_ports.get(project_name)
     if not port:

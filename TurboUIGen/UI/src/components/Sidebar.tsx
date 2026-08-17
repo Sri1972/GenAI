@@ -81,7 +81,7 @@ export default function Sidebar() {
       await api.createProject(newName)
       const slug = newName.toLowerCase()
       setNewName(''); setNameErr('')
-      refresh()
+      await refresh()
       setExpanded(slug)
       navigate(`/project/${slug}`)
     } catch (e: any) { setNameErr(e.message) }
