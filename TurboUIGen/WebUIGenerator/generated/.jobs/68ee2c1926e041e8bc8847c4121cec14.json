@@ -1,0 +1,43 @@
+{
+  "status": "completed",
+  "projectName": "expense-splitter-1",
+  "result": {
+    "projectName": "expense-splitter-1",
+    "port": 5176,
+    "url": "/app/expense-splitter-1/",
+    "files": [
+      "package.json",
+      "index.html",
+      "tsconfig.json",
+      "tailwind.config.js",
+      "postcss.config.js",
+      "src/App.tsx",
+      "src/index.css",
+      "src/main.tsx",
+      "src/types.ts",
+      "src/components/ExportToolbar.tsx",
+      "src/components/FilterDropdown.tsx",
+      "src/components/Pagination.tsx",
+      "src/components/PersonaCard.tsx",
+      "src/hooks/useApi.ts",
+      "src/pages/Dashboard.tsx",
+      "src/pages/NewSplit.tsx",
+      "src/pages/Profile.tsx",
+      "src/pages/RecurringForm.tsx",
+      "src/pages/RecurringSplits.tsx",
+      "src/pages/SplitDetail.tsx",
+      "src/pages/SplitHistory.tsx",
+      "src/utils/formatters.ts",
+      "src/utils/pptxExport.ts",
+      "api/.env",
+      "api/app_server.py",
+      "api/requirements.txt",
+      "api/schema.sql",
+      "api/seed.sql",
+      "vite.config.ts"
+    ],
+    "type": "react",
+    "requestId": "68ee2c1926e041e8bc8847c4121cec14"
+  },
+  "error": null
+}

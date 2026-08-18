@@ -1,0 +1,79 @@
+{
+  "retail-nerve-1": {
+    "name": "retail-nerve-1",
+    "title": "RetailNerve — Store Operations Command Center",
+    "hasApp": true,
+    "type": "react",
+    "source": "prompt",
+    "sourceLabel": "Instructions",
+    "figmaUrl": "",
+    "prompt": "Please create this retail web app using the instructions provided.",
+    "port": 5173
+  },
+  "figma-to-web-1": {
+    "name": "figma-to-web-1",
+    "title": "Mobility Global - OEM Vehicle Sales Analytics",
+    "hasApp": true,
+    "type": "react",
+    "source": "figma",
+    "sourceLabel": "Figma",
+    "figmaUrl": "https://www.figma.com/design/41rSsdOjCJAcfcMFGT1sie/Untitled?node-id=0-1&t=vw6T6VqXzkGwNJEI-1",
+    "prompt": "",
+    "port": 5175
+  },
+  "automotive-portal-1": {
+    "name": "automotive-portal-1",
+    "title": "AutoPulse Global",
+    "hasApp": true,
+    "type": "react",
+    "source": "prompt",
+    "sourceLabel": "Instructions",
+    "figmaUrl": "",
+    "prompt": "Please create this web app using the instructions provided.",
+    "port": 5174
+  },
+  "campus-iq-1": {
+    "name": "campus-iq-1",
+    "title": "CampusIQ — Student Success & Academic Intelligence",
+    "hasApp": true,
+    "type": "react",
+    "source": "prompt",
+    "sourceLabel": "Instructions",
+    "figmaUrl": "",
+    "prompt": "Please create this web app using the instructions provided.",
+    "port": 5177
+  },
+  "expense-splitter-1": {
+    "name": "expense-splitter-1",
+    "title": "FairSplit — Bill Splitting & Expense Sharing",
+    "hasApp": true,
+    "type": "react",
+    "source": "prompt",
+    "sourceLabel": "Instructions",
+    "figmaUrl": "",
+    "prompt": "Please create this web app using the instructions provided.",
+    "port": 5176
+  },
+  "talent-scope-1": {
+    "name": "talent-scope-1",
+    "title": "TalentScope — People Analytics & Workforce Intelligence",
+    "hasApp": true,
+    "type": "react",
+    "source": "prompt",
+    "sourceLabel": "Instructions",
+    "figmaUrl": "",
+    "prompt": "Please create this web app using the instructions provided.",
+    "port": 5179
+  },
+  "automotive-portal-clsdk-1": {
+    "name": "automotive-portal-clsdk-1",
+    "title": "AutoPulse Global",
+    "hasApp": true,
+    "type": "react",
+    "source": "prompt",
+    "sourceLabel": "Instructions",
+    "figmaUrl": "",
+    "prompt": "Please create this web app using the instructions provided.",
+    "port": 5178
+  }
+}

@@ -1,0 +1,38 @@
+AUTOMOTIVE DOMAIN — AutoPulse Global
+=====================================
+
+App Name: automotive-portal (or autopulse-global)
+Theme: Automotive sales intelligence across global markets and US states
+Accent: #0064D2 (S&P Global blue)
+
+PHASES:
+  Phase 1 (automotive-phase1-base-app.md):
+    - Dashboard with KPIs, revenue line chart, donut chart, horizontal bar chart
+    - Global Map (world choropleth with country drill-down)
+    - North America Map (US state choropleth with state drill-down)
+    - Analytics page with line/bar/area charts
+
+  Phase 2 (automotive-phase2-data-pages.md):
+    - Sales Grid (filterable data table)
+    - Inventory management page
+
+  Phase 3 (automotive-phase3-forecast.md):
+    - Forecast page with projected trends
+
+  Phase 4 (automotive-phase4-ai-concierge.md / -live.md):
+    - AI Chat assistant for querying data
+
+CHART TYPES EXERCISED:
+  - Line chart (revenue trends)
+  - Horizontal bar chart (top makes)
+  - Donut chart (segment breakdown)
+  - Area chart (cumulative volume)
+  - World choropleth map (global sales heatmap)
+  - US state choropleth map (North America sales)
+  - Grouped bar chart (make comparison)
+
+DATA TABLES:
+  - global_sales (country-level vehicle sales)
+  - us_state_sales (state-level US sales)
+  - kpis (dashboard KPIs)
+  - forecasts (projected sales data)

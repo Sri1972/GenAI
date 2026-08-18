@@ -1,0 +1,30 @@
+{
+  "automotive-portal-1": {
+    "vite": 5174,
+    "api": 8100
+  },
+  "automotive-portal-clsdk-1": {
+    "vite": 5178,
+    "api": 8105
+  },
+  "campus-iq-1": {
+    "vite": 5177,
+    "api": 8104
+  },
+  "expense-splitter-1": {
+    "vite": 5176,
+    "api": 8103
+  },
+  "figma-to-web-1": {
+    "vite": 5175,
+    "api": 8102
+  },
+  "retail-nerve-1": {
+    "vite": 5173,
+    "api": 8101
+  },
+  "talent-scope-1": {
+    "vite": 5179,
+    "api": 8106
+  }
+}

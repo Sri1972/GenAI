@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "talent-scope-1",
+  "result": null,
+  "error": "ValidationException: An error occurred (ValidationException) when calling the InvokeModel operation: The provided model identifier is invalid."
+}

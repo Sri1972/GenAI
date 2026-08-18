@@ -1,0 +1,34 @@
+EDUCATION DOMAIN — CampusIQ
+=============================
+
+App Name: campus-insights
+Theme: Modern edtech — approachable, colorful, student-friendly
+Accent: #0EA5E9 (sky blue — openness, clarity)
+Style: Bright, generous spacing, friendly typography
+
+PAGES:
+  1. Student Mosaic — Student cards with risk indicators and engagement
+  2. Assignment Tracker — Submission timeline and grading overview
+  3. Risk Radar — At-risk student identification with predictive scores
+  4. Office Hours — Advising appointment logs and outcomes
+  5. Advisor AI — AI assistant for student success queries
+  6. Academic Analytics — ADVANCED CHARTS showcase (see below)
+
+CHART TYPES EXERCISED:
+  - Radar/spider chart (student wellness: academic, social, attendance, participation, financial, health)
+  - Sunburst chart (course enrollment: school → department → course → section)
+  - Funnel chart (student retention: Enrolled → Midterm → Finals → Pass → Graduate)
+  - Box plot (GPA distribution by department)
+  - Histogram (grade distribution per course)
+  - Polar chart (office hour visits by day of week)
+  - Bubble chart (students: credit hours vs GPA vs engagement score)
+  - Gauge chart (overall retention rate)
+  - Treemap (enrollment by school by major)
+  - Line chart (enrollment trend over semesters)
+  - Stacked bar chart (grade breakdown A/B/C/D/F by course)
+  - Donut chart (student demographics breakdown)
+
+DATA TABLES:
+  - students (demographics, GPA, credits, risk_level, engagement)
+  - assignments (course, submission status, grade, due dates)
+  - office_hours (appointment logs, topics, outcomes, no-shows)

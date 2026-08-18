@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "automotive-portal-claudesdk-1",
+  "result": null,
+  "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+}

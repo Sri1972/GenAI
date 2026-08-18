@@ -1,0 +1,136 @@
+{
+  "brand": "Mobility Global",
+  "version": "1.0.0",
+
+  "colors": {
+    "primary": {
+      "vital_blue":    "#132445",
+      "forward_blue":  "#0064D2",
+      "morning_mist":  "#B8EAF5"
+    },
+    "neutral": {
+      "white":        "#FFFFFF",
+      "quiet_light":  "#EFEFE5",
+      "light_gray":   "#F4F4F4",
+      "mid_gray":     "#9CA3AF",
+      "dark_gray":    "#374151",
+      "black":        "#111827"
+    },
+    "accent": {
+      "steady_lilac":   "#420E71",
+      "soft_lilac":     "#E3ABFF",
+      "vital_spark":    "#FFE783",
+      "clarity_yellow": "#FDEBB3"
+    },
+    "semantic": {
+      "success":      "#059669",
+      "success_bg":   "#D1FAE5",
+      "warning":      "#D97706",
+      "warning_bg":   "#FDEBB3",
+      "error":        "#DC2626",
+      "error_bg":     "#FEE2E2",
+      "info":         "#0064D2",
+      "info_bg":      "#B8EAF5"
+    }
+  },
+
+  "usage": {
+    "page_background":    "#EFEFE5",
+    "header_background":  "#FFFFFF",
+    "sidebar_background": "#FFFFFF",
+    "sidebar_border":     "#E5E7EB",
+    "active_nav_bg":      "#EBF3FF",
+    "card_background":    "#FFFFFF",
+    "primary_button":     "#0064D2",
+    "primary_text":       "#132445",
+    "secondary_text":     "#374151",
+    "muted_text":         "#9CA3AF",
+    "active_nav":         "#0064D2",
+    "hover_bg":           "#B8EAF5",
+    "border":             "#E5E7EB",
+    "divider":            "#D1D5DB",
+    "focus_ring":         "#0064D2",
+    "logo_bg":            "#FFFFFF",
+    "brand_dark":         "#132445",
+    "brand_accent":       "#0064D2",
+    "brand_mist":         "#B8EAF5",
+    "brand_bg":           "#EFEFE5"
+  },
+
+  "typography": {
+    "heading_font":   "Inter",
+    "body_font":      "Inter",
+    "mono_font":      "JetBrains Mono",
+    "sizes": {
+      "h1": 32,
+      "h2": 24,
+      "h3": 20,
+      "h4": 16,
+      "body_lg": 16,
+      "body":    14,
+      "body_sm": 13,
+      "caption": 11,
+      "label":   12,
+      "nav":     14
+    },
+    "weights": {
+      "regular":   "Regular",
+      "medium":    "Medium",
+      "semibold":  "SemiBold",
+      "bold":      "Bold"
+    }
+  },
+
+  "spacing": {
+    "xs":  4,
+    "sm":  8,
+    "md":  12,
+    "lg":  16,
+    "xl":  24,
+    "2xl": 32,
+    "3xl": 48
+  },
+
+  "radius": {
+    "none":   0,
+    "sm":     4,
+    "md":     8,
+    "lg":     12,
+    "xl":     16,
+    "full":   999
+  },
+
+  "shadow": {
+    "sm":  "0 1px 3px rgba(0,0,0,0.08)",
+    "md":  "0 4px 12px rgba(0,0,0,0.10)",
+    "lg":  "0 8px 24px rgba(0,0,0,0.12)",
+    "xl":  "0 16px 40px rgba(0,0,0,0.15)"
+  },
+
+  "components": {
+    "header_height":      64,
+    "sidebar_width":      240,
+    "sidebar_height":     900,
+    "nav_item_height":    44,
+    "nav_start_y":        100,
+    "nav_padding_left":   20,
+    "nav_accent_bar_width": 3,
+    "footer_height":      56,
+    "button_height_sm":   32,
+    "button_height_md":   40,
+    "button_height_lg":   48,
+    "button_radius":      8,
+    "input_height":       40,
+    "input_radius":       8,
+    "tab_height":         44,
+    "card_padding":       24,
+    "card_radius":        16,
+    "table_row_height":   48,
+    "badge_height":       22,
+    "badge_radius":       6,
+    "logo_width":         160,
+    "logo_height":        48,
+    "logo_x":             16,
+    "logo_y":             12
+  }
+}

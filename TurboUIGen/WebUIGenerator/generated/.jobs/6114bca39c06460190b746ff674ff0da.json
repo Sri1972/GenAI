@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "automotive-portal-claudesdk-1",
+  "result": null,
+  "error": "InternalServerError: <html><body><h1>504 Gateway Time-out</h1>"
+}

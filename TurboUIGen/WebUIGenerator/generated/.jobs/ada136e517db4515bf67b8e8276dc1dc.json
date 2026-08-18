@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "automotive-portal-claudesdk-1",
+  "result": null,
+  "error": "ValueError: Agent returned non-JSON response (first 100 chars): Both validation checks pass cleanly. Here is the complete, validated architecture:"
+}

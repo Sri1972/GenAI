@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "talent-scope-1",
+  "result": null,
+  "error": "AWS Bedrock access denied (403). Check that your credentials are valid and you have invoke permissions."
+}

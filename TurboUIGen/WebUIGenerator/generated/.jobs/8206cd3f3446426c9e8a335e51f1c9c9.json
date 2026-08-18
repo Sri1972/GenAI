@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "expense-splitter-1",
+  "result": null,
+  "error": "AWS credentials expired. Please refresh your SSO session (e.g. `aws sso login`) and try again."
+}

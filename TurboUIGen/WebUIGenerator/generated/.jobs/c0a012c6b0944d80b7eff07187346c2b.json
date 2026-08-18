@@ -1,0 +1,103 @@
+{
+  "status": "completed",
+  "projectName": "talent-scope-1",
+  "result": {
+    "projectName": "talent-scope-1",
+    "title": "TalentScope — People Analytics & Workforce Intelligence",
+    "description": "",
+    "port": 5179,
+    "url": "/app/talent-scope-1/",
+    "files": [
+      "src/types.ts",
+      "index.html",
+      "package.json",
+      "vite.config.ts",
+      "tsconfig.json",
+      "tailwind.config.js",
+      "postcss.config.js",
+      "src/main.tsx",
+      "src/index.css",
+      "src/App.tsx",
+      "src/utils/formatters.ts",
+      "src/pages/NineBox.tsx",
+      "src/pages/GoalProgress.tsx",
+      "src/pages/OneOnOneTracker.tsx",
+      "src/pages/OrgPulse.tsx",
+      "src/pages/HrCopilot.tsx",
+      "src/pages/WorkforceInsights.tsx",
+      "api/schema.sql",
+      "api/seed.sql",
+      "api/app_server.py",
+      "src/hooks/useApi.ts",
+      "src/components/ExportToolbar.tsx",
+      "api/.env",
+      "api/requirements.txt",
+      "src/components/FilterDropdown.tsx",
+      "src/components/Pagination.tsx",
+      "src/components/PersonaCard.tsx"
+    ],
+    "qa": {
+      "project": "talent-scope-1",
+      "passed": true,
+      "score": 79,
+      "summary": "QA ✅ PASSED — talent-scope-1  (score 79/100, runtime=playwright)\n  Errors: 0   Warnings: 7   tsc errors: 0\n  Pages OK: 7   Pages failed: 0\n  Top findings:\n    🟡 [d3-bug] src/pages/GoalProgress.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [d3-bug] src/pages/HrCopilot.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [d3-bug] src/pages/OneOnOneTracker.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [map-bug] src/pages/OrgPulse.tsx: padStart(2) on geo.id — world-atlas numeric IDs need padStart(3,'0')\n    🟡 [d3-bug] src/pages/OrgPulse.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [d3-bug] src/pages/WorkforceInsights.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [typescript] tsconfig.json: tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or extern",
+      "pages_ok": [
+        "/",
+        "/org-pulse",
+        "/nine-box",
+        "/one-on-ones",
+        "/goals",
+        "/hr-copilot",
+        "/workforce-insights"
+      ],
+      "pages_fail": [],
+      "findings": [
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/GoalProgress.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/HrCopilot.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/OneOnOneTracker.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "map-bug",
+          "file": "src/pages/OrgPulse.tsx",
+          "message": "padStart(2) on geo.id — world-atlas numeric IDs need padStart(3,'0')"
+        },
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/OrgPulse.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/WorkforceInsights.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "typescript",
+          "file": "tsconfig.json",
+          "message": "tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or external command,\noperable program or batch file.\nnode:internal/modules/cjs/loader:1503\n  throw err;\n  ^\n\nError: Cannot find module 'C:\\Users\\srikanth.c4\\typescript\\bin\\tsc'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1500:15)\n    at wrapR"
+        }
+      ]
+    },
+    "type": "react",
+    "requestId": "c0a012c6b0944d80b7eff07187346c2b"
+  },
+  "error": null
+}

@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "talent-scope-1",
+  "result": null,
+  "error": "BadRequestError: Error code: 400 - {'message': 'The provided model identifier is invalid.'}"
+}

@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "expense-splitter-1",
+  "result": null,
+  "error": "Both LLM backends failed. Check that LiteLLM proxy is running or AWS credentials are valid."
+}

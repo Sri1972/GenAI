@@ -1,0 +1,78 @@
+{
+  "status": "completed",
+  "projectName": "expense-splitter-1",
+  "result": {
+    "projectName": "expense-splitter-1",
+    "title": "FairSplit — Bill Splitting & Expense Sharing",
+    "description": "",
+    "port": 5176,
+    "url": "/app/expense-splitter-1/",
+    "files": [
+      "src/types.ts",
+      "index.html",
+      "package.json",
+      "vite.config.ts",
+      "tsconfig.json",
+      "tailwind.config.js",
+      "postcss.config.js",
+      "src/main.tsx",
+      "src/index.css",
+      "src/App.tsx",
+      "src/utils/formatters.ts",
+      "src/pages/Splits.tsx",
+      "src/pages/Balances.tsx",
+      "src/pages/SplitDetail.tsx",
+      "src/pages/NewSplit.tsx",
+      "src/pages/People.tsx",
+      "src/pages/Recurring.tsx",
+      "src/pages/Activity.tsx",
+      "src/pages/Analytics.tsx",
+      "src/pages/Profile.tsx",
+      "api/schema.sql",
+      "api/seed.sql",
+      "api/app_server.py",
+      "src/hooks/useApi.ts",
+      "src/components/ExportToolbar.tsx",
+      "api/.env",
+      "api/requirements.txt",
+      "src/components/FilterDropdown.tsx",
+      "src/components/Pagination.tsx",
+      "src/components/PersonaCard.tsx"
+    ],
+    "qa": {
+      "project": "expense-splitter-1",
+      "passed": true,
+      "score": 94,
+      "summary": "QA ✅ PASSED — expense-splitter-1  (score 94/100, runtime=playwright)\n  Errors: 0   Warnings: 2   tsc errors: 0\n  Pages OK: 9   Pages failed: 0\n  Top findings:\n    🟡 [d3-bug] src/pages/Analytics.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [typescript] tsconfig.json: tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or extern",
+      "pages_ok": [
+        "/",
+        "/balances",
+        "/splits",
+        "/new-split",
+        "/people",
+        "/recurring",
+        "/analytics",
+        "/activity",
+        "/profile"
+      ],
+      "pages_fail": [],
+      "findings": [
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/Analytics.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "typescript",
+          "file": "tsconfig.json",
+          "message": "tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or external command,\noperable program or batch file.\nnode:internal/modules/cjs/loader:1503\n  throw err;\n  ^\n\nError: Cannot find module 'C:\\Users\\srikanth.c4\\typescript\\bin\\tsc'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1500:15)\n    at wrapR"
+        }
+      ]
+    },
+    "type": "react",
+    "requestId": "4536ae673b27414fb19f1de39f12b476"
+  },
+  "error": null
+}

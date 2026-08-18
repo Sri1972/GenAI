@@ -1,0 +1,81 @@
+{
+  "status": "completed",
+  "projectName": "automotive-portal-clsdk-1",
+  "result": {
+    "projectName": "automotive-portal-clsdk-1",
+    "title": "AutoPulse Global",
+    "description": "",
+    "port": 5178,
+    "url": "/app/automotive-portal-clsdk-1/",
+    "files": [
+      "src/types.ts",
+      "index.html",
+      "package.json",
+      "vite.config.ts",
+      "tsconfig.json",
+      "tailwind.config.js",
+      "postcss.config.js",
+      "src/main.tsx",
+      "src/index.css",
+      "src/App.tsx",
+      "src/utils/formatters.ts",
+      "src/pages/NorthAmerica.tsx",
+      "src/pages/Dashboard.tsx",
+      "src/pages/Analytics.tsx",
+      "src/pages/GlobalMap.tsx",
+      "api/schema.sql",
+      "api/seed.sql",
+      "api/app_server.py",
+      "src/hooks/useApi.ts",
+      "src/components/ExportToolbar.tsx",
+      "api/.env",
+      "api/requirements.txt",
+      "src/components/FilterDropdown.tsx",
+      "src/components/Pagination.tsx",
+      "src/components/PersonaCard.tsx"
+    ],
+    "qa": {
+      "project": "automotive-portal-clsdk-1",
+      "passed": true,
+      "score": 88,
+      "summary": "QA ✅ PASSED — automotive-portal-clsdk-1  (score 88/100, runtime=playwright)\n  Errors: 0   Warnings: 4   tsc errors: 0\n  Pages OK: 5   Pages failed: 0\n  Top findings:\n    🟡 [d3-bug] src/pages/Analytics.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [d3-bug] src/pages/Dashboard.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [map-bug] src/pages/NorthAmerica.tsx: padStart(2) on geo.id — world-atlas numeric IDs need padStart(3,'0')\n    🟡 [typescript] tsconfig.json: tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or extern",
+      "pages_ok": [
+        "/",
+        "/dashboard",
+        "/global-map",
+        "/north-america",
+        "/analytics"
+      ],
+      "pages_fail": [],
+      "findings": [
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/Analytics.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/Dashboard.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "map-bug",
+          "file": "src/pages/NorthAmerica.tsx",
+          "message": "padStart(2) on geo.id — world-atlas numeric IDs need padStart(3,'0')"
+        },
+        {
+          "severity": "warning",
+          "category": "typescript",
+          "file": "tsconfig.json",
+          "message": "tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or external command,\noperable program or batch file.\nnode:internal/modules/cjs/loader:1503\n  throw err;\n  ^\n\nError: Cannot find module 'C:\\Users\\srikanth.c4\\typescript\\bin\\tsc'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1500:15)\n    at wrapR"
+        }
+      ]
+    },
+    "type": "react",
+    "requestId": "1b90d7493fb4446e8fc1e22f04681c1c"
+  },
+  "error": null
+}

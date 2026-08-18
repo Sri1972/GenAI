@@ -1,0 +1,43 @@
+{
+  "status": "completed",
+  "projectName": "automotive-portal-clsdk-1",
+  "result": {
+    "projectName": "automotive-portal-clsdk-1",
+    "port": 5178,
+    "url": "/app/automotive-portal-clsdk-1/",
+    "files": [
+      "package.json",
+      "index.html",
+      "tsconfig.json",
+      "tailwind.config.js",
+      "postcss.config.js",
+      "src/App.tsx",
+      "src/index.css",
+      "src/main.tsx",
+      "src/types.ts",
+      "src/components/ExportToolbar.tsx",
+      "src/components/FilterDropdown.tsx",
+      "src/components/Pagination.tsx",
+      "src/components/PersonaCard.tsx",
+      "src/hooks/useApi.ts",
+      "src/pages/Analytics.tsx",
+      "src/pages/Dashboard.tsx",
+      "src/pages/GlobalMap.tsx",
+      "src/pages/Inventory.tsx",
+      "src/pages/NorthAmerica.tsx",
+      "src/pages/SalesGrid.tsx",
+      "src/utils/formatters.ts",
+      "src/utils/pptxExport.ts",
+      "api/.env",
+      "api/app_server.py",
+      "api/requirements.txt",
+      "api/schema.sql",
+      "api/seed.sql",
+      "src/pages/Forecast.tsx",
+      "vite.config.ts"
+    ],
+    "type": "react",
+    "requestId": "4fa5e2979c184c2797f29b4445189995"
+  },
+  "error": null
+}

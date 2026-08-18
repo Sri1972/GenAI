@@ -1,0 +1,88 @@
+{
+  "status": "completed",
+  "projectName": "campus-iq-1",
+  "result": {
+    "projectName": "campus-iq-1",
+    "title": "CampusIQ — Student Success & Academic Intelligence",
+    "description": "",
+    "port": 5177,
+    "url": "/app/campus-iq-1/",
+    "files": [
+      "src/types.ts",
+      "index.html",
+      "package.json",
+      "vite.config.ts",
+      "tsconfig.json",
+      "tailwind.config.js",
+      "postcss.config.js",
+      "src/main.tsx",
+      "src/index.css",
+      "src/App.tsx",
+      "src/utils/formatters.ts",
+      "src/components/RadarChart.tsx",
+      "src/components/DonutChart.tsx",
+      "src/components/BeeswarmChart.tsx",
+      "src/pages/OfficeHours.tsx",
+      "src/pages/StudentMosaic.tsx",
+      "src/pages/AssignmentTracker.tsx",
+      "src/pages/RiskRadar.tsx",
+      "src/pages/AdvisorAi.tsx",
+      "src/pages/AcademicAnalytics.tsx",
+      "api/schema.sql",
+      "api/seed.sql",
+      "api/app_server.py",
+      "src/hooks/useApi.ts",
+      "src/components/ExportToolbar.tsx",
+      "api/.env",
+      "api/requirements.txt",
+      "src/components/FilterDropdown.tsx",
+      "src/components/Pagination.tsx",
+      "src/components/PersonaCard.tsx"
+    ],
+    "qa": {
+      "project": "campus-iq-1",
+      "passed": true,
+      "score": 88,
+      "summary": "QA ✅ PASSED — campus-iq-1  (score 88/100, runtime=playwright)\n  Errors: 0   Warnings: 4   tsc errors: 0\n  Pages OK: 7   Pages failed: 0\n  Top findings:\n    🟡 [d3-bug] src/pages/AcademicAnalytics.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [map-bug] src/pages/AssignmentTracker.tsx: padStart(2) on geo.id — world-atlas numeric IDs need padStart(3,'0')\n    🟡 [d3-bug] src/pages/AssignmentTracker.tsx: D3 clears SVG on every render — ensure data is memoised so effect only fires on data chang\n    🟡 [typescript] tsconfig.json: tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or extern",
+      "pages_ok": [
+        "/",
+        "/mosaic",
+        "/assignments",
+        "/risk-radar",
+        "/office-hours",
+        "/advisor-ai",
+        "/analytics"
+      ],
+      "pages_fail": [],
+      "findings": [
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/AcademicAnalytics.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "map-bug",
+          "file": "src/pages/AssignmentTracker.tsx",
+          "message": "padStart(2) on geo.id — world-atlas numeric IDs need padStart(3,'0')"
+        },
+        {
+          "severity": "warning",
+          "category": "d3-bug",
+          "file": "src/pages/AssignmentTracker.tsx",
+          "message": "D3 clears SVG on every render — ensure data is memoised so effect only fires on data change"
+        },
+        {
+          "severity": "warning",
+          "category": "typescript",
+          "file": "tsconfig.json",
+          "message": "tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or external command,\noperable program or batch file.\nnode:internal/modules/cjs/loader:1503\n  throw err;\n  ^\n\nError: Cannot find module 'C:\\Users\\srikanth.c4\\typescript\\bin\\tsc'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1500:15)\n    at wrapR"
+        }
+      ]
+    },
+    "type": "react",
+    "requestId": "64dfdb168ea5458f9b836db1d9be3721"
+  },
+  "error": null
+}

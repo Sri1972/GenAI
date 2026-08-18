@@ -1,0 +1,68 @@
+{
+  "status": "completed",
+  "projectName": "expense-splitter-1",
+  "result": {
+    "projectName": "expense-splitter-1",
+    "title": "FairSplit — Smart Bill Splitting",
+    "description": "",
+    "port": 5176,
+    "url": "/app/expense-splitter-1/",
+    "files": [
+      "src/types.ts",
+      "index.html",
+      "package.json",
+      "vite.config.ts",
+      "tsconfig.json",
+      "tailwind.config.js",
+      "postcss.config.js",
+      "src/main.tsx",
+      "src/index.css",
+      "src/App.tsx",
+      "src/utils/formatters.ts",
+      "src/pages/Dashboard.tsx",
+      "src/pages/SplitHistory.tsx",
+      "src/pages/SplitDetail.tsx",
+      "src/pages/NewSplit.tsx",
+      "src/pages/RecurringSplits.tsx",
+      "src/pages/RecurringForm.tsx",
+      "src/pages/Profile.tsx",
+      "api/schema.sql",
+      "api/seed.sql",
+      "api/app_server.py",
+      "src/hooks/useApi.ts",
+      "src/components/ExportToolbar.tsx",
+      "api/.env",
+      "api/requirements.txt",
+      "src/components/FilterDropdown.tsx",
+      "src/components/Pagination.tsx",
+      "src/components/PersonaCard.tsx"
+    ],
+    "qa": {
+      "project": "expense-splitter-1",
+      "passed": true,
+      "score": 97,
+      "summary": "QA ✅ PASSED — expense-splitter-1  (score 97/100, runtime=playwright)\n  Errors: 0   Warnings: 1   tsc errors: 0\n  Pages OK: 7   Pages failed: 0\n  Top findings:\n    🟡 [typescript] tsconfig.json: tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or extern",
+      "pages_ok": [
+        "/",
+        "/dashboard",
+        "/new-split",
+        "/history",
+        "/recurring",
+        "/recurring/new",
+        "/profile"
+      ],
+      "pages_fail": [],
+      "findings": [
+        {
+          "severity": "warning",
+          "category": "typescript",
+          "file": "tsconfig.json",
+          "message": "tsc exited 1 (no parseable errors). Output: 'P' is not recognized as an internal or external command,\noperable program or batch file.\nnode:internal/modules/cjs/loader:1503\n  throw err;\n  ^\n\nError: Cannot find module 'C:\\Users\\srikanth.c4\\typescript\\bin\\tsc'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1500:15)\n    at wrapR"
+        }
+      ]
+    },
+    "type": "react",
+    "requestId": "0fcf2efacd4f4a3b9728f49943d6dd2d"
+  },
+  "error": null
+}

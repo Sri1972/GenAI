@@ -1,0 +1,6 @@
+{
+  "status": "failed",
+  "projectName": "talent-scope-1",
+  "result": null,
+  "error": "AttributeError: 'Messages' object has no attribute 'tool_runner'"
+}
