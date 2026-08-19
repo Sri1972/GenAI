@@ -257,10 +257,13 @@ Generates complete, production-ready React web applications from either a text d
 6. Wait ~60-120 seconds — watch progress in real-time
 7. App appears in the preview iframe, running on its own port
 
+**Backend choice:** Before generating, select **Python** or **Java** backend from the toggle above the Generate button. Python uses FastAPI; Java uses Spring Boot with JDBC.
+
 **From CLI:**
 ```bash
 cd TurboUIGen/WebUIGenerator
 python -m cli.client generate "IPL cricket dashboard with player stats"
+python -m cli.client generate "Fleet dashboard" --backend java
 python -m cli.client generate --figma "https://www.figma.com/design/ABC123/MyApp"
 python -m cli.client list
 python -m cli.client start my-project
@@ -282,7 +285,8 @@ python cli/dockerize.py --stop-all        # Stop all containers
 | **React 18 + TypeScript** | Full type safety, functional components with hooks |
 | **Tailwind CSS** | Utility-first styling, responsive design |
 | **Vite** | Fast dev server with HMR, optimized builds |
-| **SQLite + REST API** | Real database with schema.sql, seed.sql, FastAPI server |
+| **SQLite + REST API** | Real database with schema.sql, seed.sql, Python (FastAPI) or Java (Spring Boot) server |
+| **Backend choice** | Python (FastAPI, single-file) OR Java (Spring Boot, OOP layered: Controller > Service > DAO) |
 | **useApi hook** | Data fetching with retry, abort on unmount, pagination |
 | **D3.js charts** | Responsive charts with ResizeObserver, tooltips |
 | **Sidebar navigation** | React Router with collapsible sidebar |
@@ -505,6 +509,21 @@ npm run storybook  # opens http://localhost:6006
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Claude Code Refactoring (claude-sdk-refactor branch)
+
+The codebase was refactored using Claude Code (Anthropic's CLI agent) to modernize the architecture and add new capabilities. Key changes:
+
+| Area | What Changed |
+|---|---|
+| **Repository structure** | Flattened from `TurboUIGen/TurboUIGen/` to root-level `TurboUIGen/` |
+| **Branch strategy** | Main branch preserved; refactored code on `claude-sdk-refactor` branch |
+| **Java backend support** | Full Spring Boot template + pipeline wiring for Java as alternative backend |
+| **Direct API routing** | `proxy_vite()` now routes `/api/*` directly to backend, bypassing Vite proxy issues |
+| **Backend selection UI** | Toggle in GeneratePage and ProjectDetailPage to choose Python or Java |
+| **CLI backend flag** | `--backend java` / `-b java` option on generate and refine commands |
+| **Proxy injection fix** | `_inject_api_proxy` now detects Java apps (`backend/pom.xml`, `backend/.backend_type`) |
+| **Environment per app** | Each Java app has `backend/.env` with JAVA_HOME/MAVEN_HOME auto-detected |
+
 ### Project Structure
 
 ```
@@ -538,6 +557,18 @@ TurboUIGen/
 │   │   ├── data_architect/         ← Data Architect agent
 │   │   ├── visual_design/          ← Visual Design agent
 │   │   ├── services_engineer/      ← Services Engineer (templates/)
+│   │   │   └── templates/
+│   │   │       └── springboot/     ← Java Spring Boot backend template
+│   │   │           ├── pom.xml
+│   │   │           ├── mvnw.cmd
+│   │   │           ├── env_template.txt
+│   │   │           └── src/main/java/com/turboui/app/
+│   │   │               ├── Application.java
+│   │   │               ├── config/DatabaseConfig.java
+│   │   │               ├── config/CorsConfig.java
+│   │   │               ├── service/TableService.java
+│   │   │               ├── service/DatabaseInitializer.java
+│   │   │               └── controller/DynamicApiController.java
 │   │   └── ai_genai/              ← AI/GenAI agent (DataChat)
 │   ├── cli/
 │   │   ├── client.py              ← CLI interface
@@ -575,7 +606,7 @@ TurboUIGen/
 
 | Method | Path | Module | Purpose |
 |---|---|---|---|
-| POST | `/api/generate` | WebUIGenerator | Generate app (prompt or Figma URL) |
+| POST | `/api/generate` | WebUIGenerator | Generate app (prompt or Figma URL, backend_type: "python"\|"java") |
 | POST | `/api/refine/{name}` | WebUIGenerator | Refine existing project |
 | POST | `/api/draft` | WebUIGenerator | Preview architecture |
 | GET | `/api/projects` | WebUIGenerator | List all projects |
@@ -590,7 +621,8 @@ TurboUIGen/
 | GET | `/api/figma/projects` | FigmaMockupGenerator | List projects |
 | POST | `/api/figma/webapp-to-figma` | FigmaMockupGenerator | Import app → Figma |
 | GET | `/api/figma/mcp/status` | FigmaMockupGenerator | MCP health |
-| ALL | `/app/{project}/*` | Proxy | Route to Vite dev server |
+| ALL | `/app/{project}/api/*` | Proxy | Direct route to backend API server (Python or Java) |
+| ALL | `/app/{project}/*` | Proxy | Route to Vite dev server (frontend assets) |
 
 [↑ Navigation](#nav) · [↑ Technical](#technical)
 
@@ -868,7 +900,7 @@ When a user clicks "Generate", here is exactly what happens:
 | 10 | Postprocessors run | Fix D3, imports, props, maps |
 | 11 | `_tsc_heal` (up to 3 rounds) | Fix TypeScript compilation errors |
 | 12 | Start Vite dev server | Next available port from `TURBOUI_REACT_PORT_START` |
-| 13 | Start API server | `python app_server.py` → SQLite DB from schema + seed |
+| 13 | Start API server | Python: `python app_server.py` OR Java: `mvn spring-boot:run` → SQLite DB from schema + seed |
 | 14 | QA Agent (Playwright) | Navigate all routes, capture errors |
 | 15 | `_qa_heal` (up to 2 rounds) | Fix runtime errors, re-run QA |
 | 16 | Done | App live at assigned port, proxied at `/app/<name>` |
@@ -1013,9 +1045,61 @@ Both paths always delegate to `uigen_agent.generate_project()` → full React ap
 | `agents/figma_to_web_using_playwright_agent.py` | Browser screenshots → React |
 | `agents/shared-nm-package.json` | npm deps for generated apps |
 | `agents/services_engineer/templates/` | Template files (useApi, vite config, etc.) |
+| `agents/services_engineer/templates/springboot/` | Java Spring Boot backend template |
 | `agents/ai_genai/templates/` | DataChat templates |
 | `config.py` | Paths, ports, registry file locations |
 | `instructions/` | Domain instruction files (automotive, finserv, etc.) |
+
+### Java Spring Boot Backend
+
+When the user selects "Java" as the backend type, the generation pipeline bundles a Spring Boot application instead of the Python FastAPI server. Both backends implement the same REST API contract so the frontend is identical.
+
+#### Java Backend Architecture (OOP Layered)
+
+```
+Controller (DynamicApiController.java)
+    |  @RestController, @RequestMapping("/api")
+    |  Input validation, response formatting, HTTP status codes
+    v
+Service (TableService.java)
+    |  Business logic, table discovery, query building
+    |  Primary key detection via PRAGMA table_info
+    v
+DAO (Spring JdbcTemplate)
+    |  Parameterized SQL queries
+    |  Auto-configured by Spring Boot
+    v
+SQLite Database (data.db)
+    |  org.xerial:sqlite-jdbc driver
+    |  Same schema.sql/seed.sql as Python path
+```
+
+#### Prerequisites for Java Backend
+
+| Requirement | Version | Purpose |
+|---|---|---|
+| Java JDK | 17+ (21 recommended) | Compile and run Spring Boot |
+| Maven | 3.9+ | Build management |
+| `JAVA_HOME` | Set in system or `backend/.env` | JDK location |
+| `MAVEN_HOME` | Set in system or `backend/.env` | Maven location |
+
+Each generated Java app includes:
+- `backend/.env` with auto-detected `JAVA_HOME` and `MAVEN_HOME` paths
+- `mvnw.cmd` Maven wrapper (works without global Maven install)
+- `backend/.backend_type` marker file ("java-springboot")
+
+#### Key Differences from Python Backend
+
+| Aspect | Python | Java |
+|---|---|---|
+| Server file | `api/app_server.py` (single file) | 6 Java files across controller/service/config |
+| Start command | `python app_server.py` | `mvn spring-boot:run` |
+| Startup time | ~2s | ~8-20s (compile + Spring init) |
+| DB driver | aiosqlite (async) | sqlite-jdbc (JDBC) |
+| Config | `api/.env` | `backend/.env` + `application.properties` |
+| Production swap | Change to asyncpg/PostgreSQL | Change JDBC URL to PostgreSQL |
+
+See [Backend-Architecture-Diagrams.md](Backend-Architecture-Diagrams.md) for detailed flow diagrams.
 
 [↑ Navigation](#nav) · [↑ Technical](#technical)
 
@@ -1136,11 +1220,13 @@ export const tokens = {
 
 #### Prerequisites
 
-| Software | Version | Purpose |
-|---|---|---|
-| Python | 3.11+ | Backend, agents, API servers |
-| Node.js | 18+ | Vite dev servers, npm packages |
-| npm | 9+ | Package management (comes with Node.js) |
+| Software | Version | Purpose | Required? |
+|---|---|---|---|
+| Python | 3.11+ | Backend, agents, API servers | Yes |
+| Node.js | 18+ | Vite dev servers, npm packages | Yes |
+| npm | 9+ | Package management (comes with Node.js) | Yes |
+| Java JDK | 17+ (21 recommended) | Java Spring Boot backends | Only for Java backend apps |
+| Maven | 3.9+ | Java build tool | Only for Java backend apps |
 
 #### Step-by-step
 
@@ -1251,6 +1337,18 @@ If `.env` is missing or misconfigured, you get: `ModuleNotFoundError`, connectio
 | Generated app API server won't start | Check `pip install -r requirements.txt` was done. Check `api/.env` in the project. |
 | `node_modules` missing in generated app | Junction broken — re-run `setup-deps`. Check `TURBOUI_JUNCTION_DIR` path exists. |
 | TypeScript errors after generation | Self-heal ran 3 rounds max. Manually fix or re-generate with refined prompt. |
+
+### Java Backend Issues
+
+| Symptom | Fix |
+|---|---|
+| "JAVA_HOME not defined" in api_server.log | Install JDK 17+ (Eclipse Temurin recommended). Set `JAVA_HOME` in `backend/.env` or system env. |
+| "mvn: command not found" | Install Maven 3.9+. Set `MAVEN_HOME` in `backend/.env`. Or use bundled `mvnw.cmd`. |
+| Java backend takes >90s to start | First Maven run downloads dependencies (~200MB). Subsequent starts are faster (~8s). |
+| "Cannot read properties of undefined (reading 'length')" | Java controller not returning wrapped format. Check `DynamicApiController.java` returns `{data, total, limit, offset, hasMore}`. |
+| "Unexpected token '<', \\"<!DOCTYPE\\"..." | API calls returning HTML instead of JSON. Vite proxy not configured. Check `vite.config.ts` has proxy rules for `/api`. Restart TurboUIGen for direct routing. |
+| Java app won't start after code change | `mvn spring-boot:run` recompiles on start. Check `api_server.log` for compilation errors. |
+| Port 81xx still in use after Stop | Java process didn't terminate cleanly. Run `taskkill /F /PID <pid>` (find PID with `netstat -ano | findstr 81xx`). |
 
 ### FigmaMockupGenerator Issues
 

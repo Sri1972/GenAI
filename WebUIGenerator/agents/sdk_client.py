@@ -338,9 +338,9 @@ def run_agent(
 
 def _extract_json(text: str) -> dict:
     """
-    Extract JSON from model response — handles fences, preamble, and trailing text.
-    Same robustness as legacy chat_json() but simpler (no retry loop needed).
+    Extract JSON from model response — handles fences, preamble, truncation, and trailing text.
     """
+    import re
     text = text.strip()
 
     # Direct parse
@@ -349,15 +349,32 @@ def _extract_json(text: str) -> dict:
     except json.JSONDecodeError:
         pass
 
-    # Strip markdown fences
+    # Strip markdown fences (closed)
     if "```" in text:
-        import re
         match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
         if match:
             try:
                 return json.loads(match.group(1).strip())
             except json.JSONDecodeError:
                 pass
+
+    # Handle unclosed code fence (truncated response or backticks in content)
+    fence_open = re.search(r"```(?:json)?\s*\n", text)
+    if fence_open:
+        after_fence = text[fence_open.end():]
+        # Try parsing the content after the opening fence directly
+        try:
+            return json.loads(after_fence.strip())
+        except json.JSONDecodeError:
+            pass
+        # Strip a trailing incomplete ``` if present
+        after_fence = re.sub(r"\n```\s*$", "", after_fence)
+        try:
+            return json.loads(after_fence.strip())
+        except json.JSONDecodeError:
+            pass
+        # Use this narrower text for brace matching below
+        text = after_fence
 
     # Find first { to last } (the JSON object may have preamble/trailing text)
     first_brace = text.find("{")
@@ -368,6 +385,32 @@ def _extract_json(text: str) -> dict:
             return json.loads(candidate)
         except json.JSONDecodeError:
             pass
+
+        # Truncated JSON repair: close unclosed braces/brackets
+        depth_brace = candidate.count("{") - candidate.count("}")
+        depth_bracket = candidate.count("[") - candidate.count("]")
+        if depth_brace > 0 or depth_bracket > 0:
+            # Trim trailing incomplete string value (likely cut mid-file-content)
+            repaired = candidate.rstrip()
+            # Remove dangling incomplete string at end
+            if not repaired.endswith('}') and not repaired.endswith(']') and not repaired.endswith('"'):
+                # Cut back to last complete JSON value boundary
+                for end_marker in ('"}', '"]', '",', '},', '],'):
+                    idx = repaired.rfind(end_marker)
+                    if idx > len(repaired) // 2:
+                        repaired = repaired[:idx + len(end_marker)]
+                        break
+            repaired = re.sub(r',\s*$', '', repaired)
+            # Recount after trimming
+            depth_brace = repaired.count("{") - repaired.count("}")
+            depth_bracket = repaired.count("[") - repaired.count("]")
+            repaired += "]" * max(0, depth_bracket) + "}" * max(0, depth_brace)
+            try:
+                result = json.loads(repaired)
+                logger.warning(f"Repaired truncated JSON (trimmed {len(candidate) - len(repaired)} chars)")
+                return result
+            except json.JSONDecodeError:
+                pass
 
     raise ValueError(
         f"Could not extract JSON from response (length={len(text)}). "

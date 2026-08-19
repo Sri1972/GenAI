@@ -62,6 +62,7 @@ interface Props {
 
 export default function GeneratePage({ onGenerated, onRefreshProjects }: Props) {
   const [prompt, setPrompt]       = useState('')
+  const [backendType, setBackend] = useState<'python' | 'java'>('python')
   const [step, setStep]           = useState<GenerateStep>(null)
   const [error, setError]         = useState('')
   const [result, setResult]       = useState<GenerateResult | null>(null)
@@ -126,7 +127,7 @@ export default function GeneratePage({ onGenerated, onRefreshProjects }: Props) 
 
     try {
       // Fire-and-forget: returns immediately with requestId
-      const { requestId } = await api.generate(prompt.trim()) as any
+      const { requestId } = await api.generate(prompt.trim(), undefined, undefined, undefined, undefined, backendType) as any
       requestIdRef.current = requestId
       startPolling(requestId)
 
@@ -182,6 +183,37 @@ export default function GeneratePage({ onGenerated, onRefreshProjects }: Props) 
           placeholder={"Describe your app…\n\nTip: mention pages, data, style (dark/light, accent color)"}
           className="input resize-none h-40 leading-relaxed"
         />
+
+        {/* Backend type selector */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400 whitespace-nowrap">Backend:</span>
+          <div className="flex rounded-lg border border-slate-700 overflow-hidden flex-1">
+            <button
+              type="button"
+              onClick={() => setBackend('python')}
+              disabled={loading}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                backendType === 'python'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Python FastAPI
+            </button>
+            <button
+              type="button"
+              onClick={() => setBackend('java')}
+              disabled={loading}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                backendType === 'java'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Java Spring Boot
+            </button>
+          </div>
+        </div>
 
         <button onClick={generate} disabled={loading || !prompt.trim()} className="btn-primary w-full justify-center py-2.5 text-sm font-semibold">
           {loading

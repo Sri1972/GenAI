@@ -144,10 +144,9 @@ def is_docker_available() -> bool:
     now = time.time()
     if _docker_avail_cache and (now - _docker_avail_cache[0]) < 10:
         return _docker_avail_cache[1]
-    # Use a longer timeout for Windows Docker Desktop — the named-pipe handshake
-    # can take several seconds even when Docker is fully running.
-    # Fall back to a simple `docker ps` ping which is faster than `docker info`.
-    ok, _ = _docker(["ps", "--format", "{{.ID}}"], timeout=15)
+    # Use `docker info` to verify the full daemon (including BuildKit) is responsive.
+    # `docker ps` can succeed even when the build subsystem isn't ready.
+    ok, _ = _docker(["info", "--format", "{{.ServerVersion}}"], timeout=15)
     _docker_avail_cache = (now, ok)
     return ok
 
@@ -205,6 +204,16 @@ def build_image(project_name: str, project_dir: Path, progress=None) -> tuple[bo
     def _p(msg: str):
         if progress:
             progress(f"docker_build:{msg}")
+
+    # 0. Verify Docker can actually build before spending time on vite
+    _p("Checking Docker availability…")
+    ok_check, check_out = _docker(["buildx", "inspect", "--bootstrap"], timeout=20)
+    if not ok_check:
+        return False, (
+            "Docker Desktop is not running or not fully ready. "
+            "Please start Docker Desktop, wait for it to be ready "
+            "(whale icon in the system tray), and try again."
+        )
 
     bdir = _build_dir(project_name)
     bdir.mkdir(parents=True, exist_ok=True)
@@ -276,22 +285,161 @@ def build_image(project_name: str, project_dir: Path, progress=None) -> tuple[bo
     n_files = len(list(dist_dir.rglob("*")))
     _p(f"vite build complete — {n_files} output files")
 
-    # 3. Dockerfile — choose between static (nginx) and API-backed (Python + FastAPI)
+    # 3. Dockerfile — choose between static (nginx), Python+FastAPI, or Java Spring Boot
     api_dir = project_dir / "api"
-    has_api_server = (api_dir / "app_server.py").exists() or (project_dir / "app_server.py").exists()
+    has_python_api = (api_dir / "app_server.py").exists() or (project_dir / "app_server.py").exists()
+    has_java_backend = (project_dir / "backend" / "pom.xml").exists()
     _p("Writing Dockerfile…")
 
-    if has_api_server:
+    if has_java_backend:
+        # Java Spring Boot backend — multi-stage build
+        import shutil
+        backend_dir = project_dir / "backend"
+
+        # Copy entire backend source into build context
+        backend_ctx = bdir / "backend"
+        if backend_ctx.exists():
+            shutil.rmtree(str(backend_ctx))
+        shutil.copytree(
+            str(backend_dir), str(backend_ctx),
+            ignore=shutil.ignore_patterns("target", "*.db", ".git", ".github", "__pycache__"),
+        )
+
+        # Copy the pre-built SQLite database if it exists (avoids re-running schema/seed on every start)
+        db_file = backend_dir / "data.db"
+        has_prebuilt_db = db_file.exists()
+        if has_prebuilt_db:
+            shutil.copy2(str(db_file), str(bdir / "data.db"))
+        else:
+            # Fallback: copy SQL files for first-time initialization
+            for fname in ("schema.sql", "seed.sql"):
+                src = backend_dir / fname
+                if src.exists():
+                    shutil.copy2(str(src), str(bdir / fname))
+
+        # Multi-stage Dockerfile: Maven build + nginx (SPA) + JRE runtime
+        # nginx serves static files with SPA fallback and proxies /api/ to Spring Boot
+        dockerfile_content = (
+            "# Stage 1: Build the Spring Boot JAR\n"
+            "FROM maven:3.9-eclipse-temurin-17 AS builder\n"
+            "WORKDIR /build\n"
+            "COPY backend/pom.xml .\n"
+            "RUN mvn dependency:go-offline -B\n"
+            "COPY backend/src ./src\n"
+            "RUN mvn package -DskipTests -B\n"
+            "\n"
+            "# Stage 2: Runtime — nginx + JRE\n"
+            "FROM eclipse-temurin:17-jre-alpine\n"
+            "RUN apk add --no-cache nginx\n"
+            "WORKDIR /app\n"
+            "COPY --from=builder /build/target/*.jar app.jar\n"
+            "COPY dist/ /usr/share/nginx/html/\n"
+            "COPY nginx.conf /etc/nginx/http.d/default.conf\n"
+            "COPY entrypoint.sh /app/entrypoint.sh\n"
+            "RUN chmod +x /app/entrypoint.sh\n"
+        )
+        # Include pre-built database OR SQL files for first-time init
+        if has_prebuilt_db:
+            dockerfile_content += "COPY data.db /app/data.db\n"
+        else:
+            for fname in ("schema.sql", "seed.sql"):
+                if (bdir / fname).exists():
+                    dockerfile_content += f"COPY {fname} /app/{fname}\n"
+
+        dockerfile_content += (
+            "ENV PORT=8080\n"
+            "ENV DB_PATH=/app/data.db\n"
+            "EXPOSE 80\n"
+            'ENTRYPOINT ["/app/entrypoint.sh"]\n'
+        )
+
+        (bdir / "Dockerfile").write_text(dockerfile_content, encoding="utf-8", newline="\n")
+
+        # nginx config: serve static + proxy /api/ to Spring Boot
+        (bdir / "nginx.conf").write_text(
+            "server {\n"
+            "    listen 80;\n"
+            "    server_name _;\n"
+            "    root /usr/share/nginx/html;\n"
+            "    index index.html;\n"
+            "\n"
+            "    # SPA fallback — serve index.html for client-side routes\n"
+            "    location / {\n"
+            "        try_files $uri $uri/ /index.html;\n"
+            "    }\n"
+            "\n"
+            "    # Proxy API requests to Spring Boot\n"
+            "    location /api/ {\n"
+            "        proxy_pass http://127.0.0.1:8080;\n"
+            "        proxy_set_header Host $host;\n"
+            "        proxy_set_header X-Real-IP $remote_addr;\n"
+            "    }\n"
+            "\n"
+            "    location ~* \\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf)$ {\n"
+            "        expires 1y;\n"
+            '        add_header Cache-Control "public, immutable";\n'
+            "    }\n"
+            "}\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+        # Entrypoint: start Spring Boot in background, wait for it, then start nginx
+        # Use newline='\n' to avoid CRLF on Windows (would break #!/bin/sh in Linux container)
+        (bdir / "entrypoint.sh").write_text(
+            "#!/bin/sh\n"
+            "# Start Spring Boot API in background\n"
+            "java -jar /app/app.jar &\n"
+            "JAVA_PID=$!\n"
+            "\n"
+            "# Wait for Spring Boot to accept requests before starting nginx\n"
+            "echo 'Waiting for Spring Boot...'\n"
+            "for i in $(seq 1 90); do\n"
+            "  if wget -q --spider http://127.0.0.1:8080/api/tables 2>/dev/null; then\n"
+            "    echo 'Spring Boot ready'\n"
+            "    break\n"
+            "  fi\n"
+            "  sleep 1\n"
+            "done\n"
+            "\n"
+            "# Start nginx in foreground (serves frontend + proxies /api/)\n"
+            "nginx -g 'daemon off;' &\n"
+            "NGINX_PID=$!\n"
+            "\n"
+            "# If either process dies, stop the container\n"
+            "trap 'kill $JAVA_PID $NGINX_PID 2>/dev/null' EXIT\n"
+            "wait $JAVA_PID $NGINX_PID\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    elif has_python_api:
         # Copy API server files into build context
         import shutil
         copied_files = []
         # Check api/ subfolder first, then legacy root-level
         api_source = api_dir if (api_dir / "app_server.py").exists() else project_dir
-        for fname in ("app_server.py", "schema.sql", "seed.sql", ".env", "requirements.txt"):
+
+        # Prefer pre-built database over SQL files
+        db_file = api_source / "data.db"
+        has_prebuilt_db_py = db_file.exists()
+        if has_prebuilt_db_py:
+            shutil.copy2(str(db_file), str(bdir / "data.db"))
+            copied_files.append("data.db")
+
+        for fname in ("app_server.py", ".env", "requirements.txt"):
             src = api_source / fname
             if src.exists():
                 shutil.copy2(str(src), str(bdir / fname))
                 copied_files.append(fname)
+
+        # Only include SQL files if no pre-built database
+        if not has_prebuilt_db_py:
+            for fname in ("schema.sql", "seed.sql"):
+                src = api_source / fname
+                if src.exists():
+                    shutil.copy2(str(src), str(bdir / fname))
+                    copied_files.append(fname)
 
         # Ensure python-multipart is in requirements (FastAPI needs it for form data)
         req_file = bdir / "requirements.txt"
@@ -316,6 +464,7 @@ def build_image(project_name: str, project_dir: Path, progress=None) -> tuple[bo
             "EXPOSE 80\n"
             'CMD ["python", "app_server.py"]\n',
             encoding="utf-8",
+            newline="\n",
         )
     else:
         (bdir / "nginx.conf").write_text(
@@ -333,6 +482,7 @@ def build_image(project_name: str, project_dir: Path, progress=None) -> tuple[bo
             "    }\n"
             "}\n",
             encoding="utf-8",
+            newline="\n",
         )
         (bdir / "Dockerfile").write_text(
             "FROM nginx:alpine\n"
@@ -341,12 +491,17 @@ def build_image(project_name: str, project_dir: Path, progress=None) -> tuple[bo
             "EXPOSE 80\n"
             'CMD ["nginx", "-g", "daemon off;"]\n',
             encoding="utf-8",
+            newline="\n",
         )
 
     # 4. docker build
     tag = image_tag(project_name)
-    _p(f"Building Docker image {tag} (first run downloads nginx:alpine ~10MB)…")
-    ok, out = _docker(["build", "-t", tag, "."], timeout=300, cwd=str(bdir))
+    build_timeout = 600 if has_java_backend else 300
+    if has_java_backend:
+        _p(f"Building Docker image {tag} (Maven build — first run downloads dependencies, may take 3-5 min)…")
+    else:
+        _p(f"Building Docker image {tag} (first run downloads nginx:alpine ~10MB)…")
+    ok, out = _docker(["build", "-t", tag, "."], timeout=build_timeout, cwd=str(bdir))
     if not ok:
         return False, f"docker build failed:\n{out[-1500:]}"
 

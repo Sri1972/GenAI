@@ -1055,6 +1055,7 @@ def _inject_api_proxy(files: dict, project_name: str = "", port: int = 0, api_po
         "api/app_server.py" in files or "app_server.py" in files
         or "api_server.py" in files
         or "api/schema.sql" in files or "schema.sql" in files
+        or "backend/.backend_type" in files or "backend/pom.xml" in files
     )
     if not has_api:
         return files

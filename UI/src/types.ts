@@ -11,6 +11,7 @@ export interface Project {
   sourceLabel?: string
   figmaUrl?: string
   prompt?: string
+  backendType?: 'python' | 'java'
 }
 
 export interface GenerateResult {

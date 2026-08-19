@@ -77,6 +77,7 @@ class GenerateRequest(BaseModel):
     figma_url: str | None = None
     instructions: str = ""   # optional Markdown instructions appended to prompt
     architecture: dict | None = None  # pre-approved architecture from /api/draft (skips Stage 1)
+    backend_type: str = "python"  # "python" (FastAPI) or "java" (Spring Boot)
 
 
 class DraftRequest(BaseModel):
@@ -90,6 +91,7 @@ class RefineRequest(BaseModel):
     comment: str = ""         # optional user note shown in history
     instructions: str = ""    # optional Markdown instructions
     architecture: dict | None = None  # pre-approved architecture from /api/draft (uses pipeline instead of diff)
+    backend_type: str = "python"  # "python" (FastAPI) or "java" (Spring Boot)
 
 class CreateProjectRequest(BaseModel):
     name: str
@@ -335,6 +337,650 @@ def _append_buildlog(project_name: str, log_lines: list[str],
     buildlog_file.write_text(_json.dumps(runs, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _generate_architecture(project_name: str, event: str = "Generated", backend_type: str = "python"):
+    """Scan project files on disk and generate a .architecture.md document."""
+    from agents.uigen_agent import GENERATED_DIR
+    from datetime import datetime, timezone
+    import re as _re_arch
+
+    project_dir = GENERATED_DIR / project_name
+    if not project_dir.exists():
+        return
+
+    arch_file = project_dir / ".architecture.md"
+
+    # Detect backend type from disk
+    bt_file = project_dir / "backend" / ".backend_type"
+    if bt_file.exists():
+        _bt_raw = bt_file.read_text(encoding="utf-8").strip()
+        backend_type = "java" if "java" in _bt_raw else _bt_raw
+    elif (project_dir / "backend" / "pom.xml").exists():
+        backend_type = "java"
+
+    # Scan pages from src/pages/
+    pages_dir = project_dir / "src" / "pages"
+    pages: list[str] = []
+    if pages_dir.exists():
+        pages = sorted(f.stem for f in pages_dir.iterdir() if f.suffix == ".tsx")
+
+    # Scan shared components from src/components/
+    comps_dir = project_dir / "src" / "components"
+    components: list[str] = []
+    if comps_dir.exists():
+        components = sorted(f.name for f in comps_dir.iterdir() if f.suffix in (".tsx", ".ts"))
+
+    # Scan hooks
+    hooks_dir = project_dir / "src" / "hooks"
+    hooks: list[str] = []
+    if hooks_dir.exists():
+        hooks = sorted(f.name for f in hooks_dir.iterdir() if f.suffix in (".ts", ".tsx"))
+
+    # Parse schema.sql for table names
+    tables: list[str] = []
+    schema_paths = [
+        project_dir / "api" / "schema.sql",
+        project_dir / "backend" / "schema.sql",
+        project_dir / "schema.sql",
+    ]
+    schema_content = ""
+    for sp in schema_paths:
+        if sp.exists():
+            schema_content = sp.read_text(encoding="utf-8")
+            break
+    if schema_content:
+        tables = _re_arch.findall(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)", schema_content, _re_arch.IGNORECASE)
+
+    # Build markdown
+    lines = []
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines.append(f"# Architecture: {project_name}")
+    lines.append("")
+    lines.append(f"**Last updated:** {ts} ({event})")
+    lines.append(f"**Backend:** {'Java Spring Boot (JDBC + SQLite)' if backend_type == 'java' else 'Python FastAPI (SQLite)'}")
+    lines.append(f"**Frontend:** React 18 + TypeScript + Vite + Tailwind CSS")
+    lines.append(f"**Pages:** {len(pages)} | **Tables:** {len(tables)} | **Components:** {len(components)}")
+    lines.append("")
+
+    # Component diagram
+    lines.append("---")
+    lines.append("## Component Overview")
+    lines.append("")
+    lines.append("```")
+    lines.append("┌─────────────────────────────────────────────────────────────┐")
+    lines.append("│                        FRONTEND                             │")
+    lines.append("│  ┌─────────┐   ┌─────────────┐   ┌──────────────────────┐  │")
+    lines.append("│  │  App.tsx │──▶│  Router      │──▶│  Pages (*.tsx)       │  │")
+    lines.append("│  └─────────┘   └─────────────┘   └──────────┬───────────┘  │")
+    lines.append("│                                              │              │")
+    lines.append("│                              ┌───────────────┼───────────┐  │")
+    lines.append("│                              │  Components   │  Hooks    │  │")
+    lines.append("│                              └───────────────┼───────────┘  │")
+    lines.append("│                                              │              │")
+    lines.append("│                                     useApi() │              │")
+    lines.append("└──────────────────────────────────────────────┼──────────────┘")
+    lines.append("                                               │ /api/data/{table}")
+    lines.append("┌──────────────────────────────────────────────┼──────────────┐")
+    lines.append("│                        BACKEND               │              │")
+    if backend_type == "java":
+        lines.append("│  ┌───────────────────────┐   ┌──────────────▼───────────┐  │")
+        lines.append("│  │  DynamicApiController  │◀──│  TableService            │  │")
+        lines.append("│  └───────────────────────┘   └──────────────┬───────────┘  │")
+        lines.append("│                                              │              │")
+        lines.append("│                                   JdbcTemplate              │")
+        lines.append("│                                              │              │")
+    else:
+        lines.append("│  ┌───────────────────────┐   ┌──────────────▼───────────┐  │")
+        lines.append("│  │  FastAPI Routes        │◀──│  app_server.py           │  │")
+        lines.append("│  └───────────────────────┘   └──────────────┬───────────┘  │")
+        lines.append("│                                              │              │")
+        lines.append("│                                      sqlite3 module         │")
+        lines.append("│                                              │              │")
+    lines.append("│                                     ┌────────▼────────┐        │")
+    lines.append("│                                     │  SQLite (data.db)│        │")
+    lines.append("│                                     └─────────────────┘        │")
+    lines.append("└─────────────────────────────────────────────────────────────────┘")
+    lines.append("```")
+    lines.append("")
+
+    # Pages section
+    lines.append("---")
+    lines.append("## Pages")
+    lines.append("")
+    lines.append("| Page | File | Data Tables Used |")
+    lines.append("|------|------|-----------------|")
+    for page in pages:
+        page_file = pages_dir / f"{page}.tsx"
+        used_tables = []
+        if page_file.exists():
+            content = page_file.read_text(encoding="utf-8")
+            for t in tables:
+                if t in content:
+                    used_tables.append(t)
+        lines.append(f"| {page} | `src/pages/{page}.tsx` | {', '.join(used_tables) or '—'} |")
+    lines.append("")
+
+    # Components section
+    if components:
+        lines.append("---")
+        lines.append("## Shared Components")
+        lines.append("")
+        lines.append("| Component | File |")
+        lines.append("|-----------|------|")
+        for comp in components:
+            lines.append(f"| {comp.replace('.tsx','').replace('.ts','')} | `src/components/{comp}` |")
+        lines.append("")
+
+    # Hooks section
+    if hooks:
+        lines.append("---")
+        lines.append("## Hooks")
+        lines.append("")
+        lines.append("| Hook | File | Purpose |")
+        lines.append("|------|------|---------|")
+        for hook in hooks:
+            purpose = "API data fetching" if "api" in hook.lower() else "Custom logic"
+            lines.append(f"| {hook.replace('.ts','')} | `src/hooks/{hook}` | {purpose} |")
+        lines.append("")
+
+    # Backend section
+    lines.append("---")
+    lines.append("## Backend")
+    lines.append("")
+    if backend_type == "java":
+        lines.append("**Stack:** Spring Boot 3.3 + JdbcTemplate + SQLite JDBC")
+        lines.append("")
+        lines.append("| Layer | File | Responsibility |")
+        lines.append("|-------|------|---------------|")
+        lines.append("| Controller | `backend/src/main/java/.../DynamicApiController.java` | REST endpoints, request routing |")
+        lines.append("| Service | `backend/src/main/java/.../TableService.java` | Business logic, query building |")
+        lines.append("| Config | `backend/src/main/resources/application.properties` | Server port, DB path |")
+        lines.append("| Schema | `backend/schema.sql` | Table definitions |")
+        lines.append("| Seed | `backend/seed.sql` | Initial data |")
+        lines.append("| Build | `backend/pom.xml` | Maven dependencies |")
+        lines.append("| Env | `backend/.env` | JAVA_HOME, MAVEN_HOME, PORT |")
+    else:
+        lines.append("**Stack:** Python FastAPI + sqlite3 + Uvicorn")
+        lines.append("")
+        lines.append("| Layer | File | Responsibility |")
+        lines.append("|-------|------|---------------|")
+        lines.append("| Server | `api/app_server.py` | REST endpoints, DB queries, AI chat |")
+        lines.append("| Schema | `api/schema.sql` | Table definitions |")
+        lines.append("| Seed | `api/seed.sql` | Initial data |")
+        lines.append("| Env | `api/.env` | LLM config, API port |")
+        lines.append("| Deps | `api/requirements.txt` | Python packages |")
+    lines.append("")
+
+    # Data model
+    if tables:
+        lines.append("---")
+        lines.append("## Data Model")
+        lines.append("")
+        lines.append("| Table | Columns |")
+        lines.append("|-------|---------|")
+        for table in tables:
+            # Extract columns for this table from schema
+            pattern = rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{_re_arch.escape(table)}\s*\((.*?)\)"
+            match = _re_arch.search(pattern, schema_content, _re_arch.DOTALL | _re_arch.IGNORECASE)
+            if match:
+                cols_raw = match.group(1)
+                cols = [c.strip().split()[0] for c in cols_raw.split(",") if c.strip() and not c.strip().upper().startswith(("PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"))]
+                lines.append(f"| `{table}` | {', '.join(cols[:8])}{' ...' if len(cols) > 8 else ''} |")
+            else:
+                lines.append(f"| `{table}` | — |")
+        lines.append("")
+
+    # API endpoints
+    lines.append("---")
+    lines.append("## API Endpoints")
+    lines.append("")
+    lines.append("| Method | Endpoint | Description |")
+    lines.append("|--------|----------|-------------|")
+    for table in tables:
+        lines.append(f"| GET | `/api/data/{table}` | List all {table} (paginated) |")
+    lines.append("| POST | `/api/chat` | AI chat endpoint |")
+    lines.append("")
+
+    # File tree
+    lines.append("---")
+    lines.append("## File Structure")
+    lines.append("")
+    lines.append("```")
+    lines.append(f"{project_name}/")
+    lines.append("├── src/")
+    lines.append("│   ├── pages/")
+    for p in pages:
+        lines.append(f"│   │   └── {p}.tsx")
+    lines.append("│   ├── components/")
+    for c in components[:5]:
+        lines.append(f"│   │   └── {c}")
+    if len(components) > 5:
+        lines.append(f"│   │   └── ... ({len(components) - 5} more)")
+    lines.append("│   ├── hooks/")
+    for h in hooks:
+        lines.append(f"│   │   └── {h}")
+    lines.append("│   ├── App.tsx")
+    lines.append("│   └── main.tsx")
+    if backend_type == "java":
+        lines.append("├── backend/")
+        lines.append("│   ├── src/main/java/com/turboui/app/")
+        lines.append("│   │   ├── controller/DynamicApiController.java")
+        lines.append("│   │   ├── service/TableService.java")
+        lines.append("│   │   └── Application.java")
+        lines.append("│   ├── src/main/resources/application.properties")
+        lines.append("│   ├── schema.sql")
+        lines.append("│   ├── seed.sql")
+        lines.append("│   ├── pom.xml")
+        lines.append("│   └── .env")
+    else:
+        lines.append("├── api/")
+        lines.append("│   ├── app_server.py")
+        lines.append("│   ├── schema.sql")
+        lines.append("│   ├── seed.sql")
+        lines.append("│   ├── .env")
+        lines.append("│   └── requirements.txt")
+    lines.append("├── package.json")
+    lines.append("├── vite.config.ts")
+    lines.append("├── tailwind.config.js")
+    lines.append("└── index.html")
+    lines.append("```")
+    lines.append("")
+
+    # Write to disk
+    arch_file.write_text("\n".join(lines), encoding="utf-8")
+
+    # Generate HTML version
+    _generate_architecture_html(project_dir, project_name, backend_type, pages, components, hooks, tables, schema_content, ts, event)
+
+
+def _generate_architecture_html(
+    project_dir, project_name: str, backend_type: str,
+    pages: list, components: list, hooks: list, tables: list,
+    schema_content: str, timestamp: str, event: str
+):
+    """Generate a rich, visually stunning HTML architecture document using CSS boxes and proper tree layout."""
+    import re as _re
+
+    html_file = project_dir / ".architecture.html"
+
+    # Extract table columns for data model
+    table_data = []
+    for table in tables:
+        pattern = rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{_re.escape(table)}\s*\((.*?)\)"
+        match = _re.search(pattern, schema_content, _re.DOTALL | _re.IGNORECASE)
+        cols = []
+        if match:
+            cols_raw = match.group(1)
+            cols = [c.strip().split()[0] for c in cols_raw.split(",")
+                    if c.strip() and not c.strip().upper().startswith(("PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"))]
+        table_data.append({"name": table, "columns": cols[:10]})
+
+    # Detect page-table relationships
+    pages_dir = project_dir / "src" / "pages"
+    page_tables = {}
+    for page in pages:
+        page_file = pages_dir / f"{page}.tsx"
+        used = []
+        if page_file.exists():
+            pg_content = page_file.read_text(encoding="utf-8")
+            for t in tables:
+                if t in pg_content:
+                    used.append(t)
+        page_tables[page] = used
+
+    backend_label = "Java Spring Boot (JDBC + SQLite)" if backend_type == "java" else "Python FastAPI (SQLite)"
+    backend_icon_char = "☕" if backend_type == "java" else "\U0001f40d"
+
+    # --- Build component diagram backend boxes ---
+    if backend_type == "java":
+        backend_boxes = """
+            <div class="arch-box backend-box">
+              <div class="box-label">DynamicApiController</div>
+              <div class="box-sublabel">REST endpoints</div>
+            </div>
+            <div class="arch-box backend-box">
+              <div class="box-label">TableService</div>
+              <div class="box-sublabel">Business logic</div>
+            </div>
+            <div class="arch-box backend-box">
+              <div class="box-label">JdbcTemplate</div>
+              <div class="box-sublabel">Query execution</div>
+            </div>"""
+    else:
+        backend_boxes = """
+            <div class="arch-box backend-box">
+              <div class="box-label">FastAPI Routes</div>
+              <div class="box-sublabel">REST endpoints</div>
+            </div>
+            <div class="arch-box backend-box">
+              <div class="box-label">app_server.py</div>
+              <div class="box-sublabel">Business logic</div>
+            </div>
+            <div class="arch-box backend-box">
+              <div class="box-label">sqlite3</div>
+              <div class="box-sublabel">DB module</div>
+            </div>"""
+
+    # --- Build file tree HTML ---
+    tree_lines = []
+    tree_lines.append(f'<li class="tree-dir"><span class="dir-name">{project_name}/</span><ul>')
+    # src/
+    tree_lines.append('<li class="tree-dir"><span class="dir-name">src/</span><ul>')
+    tree_lines.append('<li class="tree-dir"><span class="dir-name">pages/</span><ul>')
+    for p in pages:
+        tree_lines.append(f'<li class="tree-file"><span class="file-name">{p}.tsx</span></li>')
+    tree_lines.append('</ul></li>')
+    tree_lines.append('<li class="tree-dir"><span class="dir-name">components/</span><ul>')
+    for c in components[:8]:
+        tree_lines.append(f'<li class="tree-file"><span class="file-name">{c}</span></li>')
+    if len(components) > 8:
+        tree_lines.append(f'<li class="tree-file"><span class="file-more">... +{len(components)-8} more</span></li>')
+    tree_lines.append('</ul></li>')
+    tree_lines.append('<li class="tree-dir"><span class="dir-name">hooks/</span><ul>')
+    for h in hooks:
+        tree_lines.append(f'<li class="tree-file"><span class="file-name">{h}</span></li>')
+    tree_lines.append('</ul></li>')
+    tree_lines.append('<li class="tree-file"><span class="file-name">App.tsx</span></li>')
+    tree_lines.append('<li class="tree-file"><span class="file-name">main.tsx</span></li>')
+    tree_lines.append('</ul></li>')  # close src/
+
+    if backend_type == "java":
+        tree_lines.append('<li class="tree-dir"><span class="dir-name">backend/</span><ul>')
+        tree_lines.append('<li class="tree-dir"><span class="dir-name">src/main/java/.../</span><ul>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">DynamicApiController.java</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">TableService.java</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">Application.java</span></li>')
+        tree_lines.append('</ul></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">application.properties</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">schema.sql</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">pom.xml</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">.env</span></li>')
+        tree_lines.append('</ul></li>')
+    else:
+        tree_lines.append('<li class="tree-dir"><span class="dir-name">api/</span><ul>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">app_server.py</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">schema.sql</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">seed.sql</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">.env</span></li>')
+        tree_lines.append('<li class="tree-file"><span class="file-name">requirements.txt</span></li>')
+        tree_lines.append('</ul></li>')
+
+    tree_lines.append('<li class="tree-file"><span class="file-name">package.json</span></li>')
+    tree_lines.append('<li class="tree-file"><span class="file-name">vite.config.ts</span></li>')
+    tree_lines.append('<li class="tree-file"><span class="file-name">tailwind.config.js</span></li>')
+    tree_lines.append('<li class="tree-file"><span class="file-name">index.html</span></li>')
+    tree_lines.append('</ul></li>')
+    tree_html = "\n      ".join(tree_lines)
+
+    # --- Table rows ---
+    pages_rows = ""
+    for page in pages:
+        used = page_tables.get(page, [])
+        tags = "".join(f'<span class="tag">{t}</span>' for t in used) if used else '<span class="dim">—</span>'
+        pages_rows += f'        <tr><td class="cell-name">{page}</td><td class="cell-path">src/pages/{page}.tsx</td><td>{tags}</td></tr>\n'
+
+    comp_rows = ""
+    for comp in components:
+        comp_name = comp.replace(".tsx", "").replace(".ts", "")
+        comp_rows += f'        <tr><td class="cell-name">{comp_name}</td><td class="cell-path">src/components/{comp}</td></tr>\n'
+
+    data_rows = ""
+    for td in table_data:
+        col_tags = "".join(f'<span class="col-tag">{c}</span>' for c in td["columns"][:8])
+        if len(td["columns"]) > 8:
+            col_tags += f'<span class="col-tag more">+{len(td["columns"])-8}</span>'
+        data_rows += f'        <tr><td class="cell-name">{td["name"]}</td><td>{col_tags or "—"}</td></tr>\n'
+
+    api_rows = ""
+    for table in tables:
+        api_rows += f'        <tr><td><span class="method get">GET</span></td><td class="cell-path">/api/data/{table}</td><td>List {table} (paginated)</td></tr>\n'
+    api_rows += '        <tr><td><span class="method post">POST</span></td><td class="cell-path">/api/chat</td><td>AI chat endpoint</td></tr>\n'
+
+    if backend_type == "java":
+        backend_rows = """
+        <tr><td class="cell-name">Controller</td><td class="cell-path">DynamicApiController.java</td><td>REST endpoints, routing</td></tr>
+        <tr><td class="cell-name">Service</td><td class="cell-path">TableService.java</td><td>Business logic, queries</td></tr>
+        <tr><td class="cell-name">Config</td><td class="cell-path">application.properties</td><td>Port, DB path</td></tr>
+        <tr><td class="cell-name">Schema</td><td class="cell-path">schema.sql</td><td>Table definitions</td></tr>
+        <tr><td class="cell-name">Build</td><td class="cell-path">pom.xml</td><td>Maven dependencies</td></tr>
+        <tr><td class="cell-name">Env</td><td class="cell-path">.env</td><td>JAVA_HOME, PORT</td></tr>"""
+    else:
+        backend_rows = """
+        <tr><td class="cell-name">Server</td><td class="cell-path">app_server.py</td><td>REST + DB queries</td></tr>
+        <tr><td class="cell-name">Schema</td><td class="cell-path">schema.sql</td><td>Table definitions</td></tr>
+        <tr><td class="cell-name">Seed</td><td class="cell-path">seed.sql</td><td>Initial data</td></tr>
+        <tr><td class="cell-name">Deps</td><td class="cell-path">requirements.txt</td><td>Python packages</td></tr>
+        <tr><td class="cell-name">Env</td><td class="cell-path">.env</td><td>LLM config, port</td></tr>"""
+
+    backend_stack = "Spring Boot 3.3 + JdbcTemplate + SQLite JDBC" if backend_type == "java" else "Python FastAPI + sqlite3 + Uvicorn"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Architecture — {project_name}</title>
+<style>
+:root {{
+  --bg-primary: #0f172a;
+  --bg-card: rgba(30,41,59,0.7);
+  --border: rgba(148,163,184,0.12);
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-dim: #64748b;
+  --accent-blue: #60a5fa;
+  --accent-purple: #a78bfa;
+  --accent-green: #4ade80;
+  --accent-amber: #fbbf24;
+  --accent-cyan: #22d3ee;
+}}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; padding: 2rem; }}
+.container {{ max-width: 1200px; margin: 0 auto; }}
+h1 {{ font-size: 1.6rem; font-weight: 700; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.3rem; }}
+.subtitle {{ color: var(--text-secondary); font-size: 0.75rem; margin-bottom: 1.5rem; }}
+.meta-row {{ display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 2rem; }}
+.chip {{ background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.25); border-radius: 9999px; padding: 0.3rem 0.75rem; font-size: 0.68rem; font-weight: 500; color: #a5b4fc; }}
+
+.section {{ background: var(--bg-card); border: 1px solid var(--border); border-radius: 1rem; padding: 1.5rem; margin-bottom: 1.5rem; backdrop-filter: blur(8px); }}
+.section-hdr {{ font-size: 0.85rem; font-weight: 600; color: var(--text-primary); margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.5rem; }}
+.section-hdr .icon {{ width: 1.5rem; height: 1.5rem; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; }}
+
+/* Component Diagram */
+.arch-diagram {{ display: flex; flex-direction: column; align-items: center; gap: 0; }}
+.arch-layer {{ width: 100%; max-width: 720px; border: 2px solid; border-radius: 14px; padding: 1.4rem 1.2rem 1.2rem; position: relative; }}
+.arch-layer.frontend {{ border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.04); }}
+.arch-layer.backend {{ border-color: rgba(167,139,250,0.4); background: rgba(167,139,250,0.04); }}
+.arch-layer.database {{ border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.04); max-width: 220px; }}
+.layer-label {{ position: absolute; top: -0.55rem; left: 1.2rem; background: var(--bg-primary); padding: 0 0.6rem; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }}
+.frontend .layer-label {{ color: var(--accent-blue); }}
+.backend .layer-label {{ color: var(--accent-purple); }}
+.database .layer-label {{ color: var(--accent-amber); }}
+.layer-content {{ display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: center; align-items: stretch; }}
+.arch-box {{ border: 1.5px solid rgba(148,163,184,0.2); border-radius: 10px; padding: 0.7rem 1rem; background: rgba(15,23,42,0.7); text-align: center; min-width: 110px; transition: border-color 0.2s, transform 0.2s; }}
+.arch-box:hover {{ transform: translateY(-2px); }}
+.arch-box .box-label {{ font-size: 0.7rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; }}
+.arch-box .box-sublabel {{ font-size: 0.58rem; color: var(--text-dim); margin-top: 0.2rem; }}
+.frontend-box {{ border-color: rgba(96,165,250,0.35); }}
+.frontend-box:hover {{ border-color: var(--accent-blue); }}
+.backend-box {{ border-color: rgba(167,139,250,0.35); }}
+.backend-box:hover {{ border-color: var(--accent-purple); }}
+.db-box {{ border-color: rgba(251,191,36,0.35); }}
+.db-box:hover {{ border-color: var(--accent-amber); }}
+
+/* Connectors */
+.connector {{ display: flex; align-items: center; justify-content: center; height: 3rem; position: relative; }}
+.connector-line {{ width: 2px; height: 100%; background: var(--accent-green); opacity: 0.6; }}
+.connector-arrow {{ position: absolute; bottom: -1px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--accent-green); }}
+.connector-label {{ position: absolute; left: calc(50% + 1rem); top: 50%; transform: translateY(-50%); font-size: 0.6rem; color: var(--accent-green); font-weight: 600; font-family: 'JetBrains Mono', monospace; background: var(--bg-primary); padding: 0.15rem 0.5rem; border-radius: 4px; border: 1px solid rgba(74,222,128,0.2); white-space: nowrap; }}
+
+/* Tables */
+.grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }}
+@media (max-width: 768px) {{ .grid-2 {{ grid-template-columns: 1fr; }} }}
+table {{ width: 100%; border-collapse: collapse; font-size: 0.72rem; }}
+th {{ text-align: left; padding: 0.55rem 0.7rem; background: rgba(99,102,241,0.08); color: var(--accent-purple); font-weight: 600; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }}
+td {{ padding: 0.5rem 0.7rem; border-bottom: 1px solid rgba(148,163,184,0.05); color: #cbd5e1; vertical-align: top; }}
+tr:hover td {{ background: rgba(99,102,241,0.04); }}
+.cell-name {{ font-weight: 600; color: var(--text-primary); }}
+.cell-path {{ font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.64rem; color: var(--accent-cyan); }}
+.tag {{ display: inline-block; background: rgba(99,102,241,0.15); color: #c4b5fd; padding: 0.12rem 0.45rem; border-radius: 4px; font-size: 0.58rem; font-weight: 500; margin: 0.1rem 0.12rem; }}
+.col-tag {{ display: inline-block; background: rgba(74,222,128,0.1); color: #86efac; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.56rem; font-weight: 500; margin: 0.06rem 0.08rem; font-family: 'JetBrains Mono', monospace; }}
+.col-tag.more {{ background: rgba(251,191,36,0.12); color: #fcd34d; }}
+.dim {{ color: var(--text-dim); }}
+.method {{ display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.58rem; font-weight: 700; font-family: monospace; min-width: 2.8rem; text-align: center; }}
+.method.get {{ background: rgba(74,222,128,0.12); color: #86efac; }}
+.method.post {{ background: rgba(96,165,250,0.12); color: #93c5fd; }}
+
+/* File Tree */
+.file-tree {{ list-style: none; padding: 0; }}
+.file-tree ul {{ list-style: none; padding-left: 0; margin: 0; }}
+.file-tree li {{ position: relative; padding-left: 1.5rem; }}
+.file-tree li::before {{ content: ''; position: absolute; left: 0.5rem; top: 0; height: 100%; width: 1px; background: rgba(148,163,184,0.15); }}
+.file-tree li::after {{ content: ''; position: absolute; left: 0.5rem; top: 0.85rem; width: 0.7rem; height: 1px; background: rgba(148,163,184,0.25); }}
+.file-tree li:last-child::before {{ height: 0.85rem; }}
+.file-tree > li::before, .file-tree > li::after {{ display: none; }}
+.file-tree > li {{ padding-left: 0; }}
+.tree-dir > span, .tree-file > span {{ display: inline-block; padding: 0.15rem 0; line-height: 1.7; }}
+.dir-name {{ font-weight: 600; color: var(--accent-blue); font-size: 0.72rem; cursor: default; }}
+.dir-name::before {{ content: '\U0001f4c2 '; }}
+.file-name {{ color: #cbd5e1; font-family: 'JetBrains Mono', monospace; font-size: 0.66rem; }}
+.file-name::before {{ content: ''; display: inline-block; width: 0.5rem; height: 0.5rem; background: var(--accent-cyan); opacity: 0.5; border-radius: 2px; margin-right: 0.4rem; vertical-align: middle; }}
+.file-more {{ color: var(--text-dim); font-style: italic; font-size: 0.64rem; }}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>\U0001f3d7️ {project_name}</h1>
+  <p class="subtitle">Architecture Document &middot; {event} &middot; {timestamp}</p>
+
+  <div class="meta-row">
+    <span class="chip">{backend_icon_char} {backend_label}</span>
+    <span class="chip">⚛️ React 18 + TypeScript + Vite</span>
+    <span class="chip">\U0001f3a8 Tailwind CSS</span>
+    <span class="chip">\U0001f4c4 {len(pages)} Pages</span>
+    <span class="chip">\U0001f5c4️ {len(tables)} Tables</span>
+    <span class="chip">\U0001f9e9 {len(components)} Components</span>
+  </div>
+
+  <div class="section">
+    <div class="section-hdr"><div class="icon">\U0001f517</div> Component Architecture</div>
+    <div class="arch-diagram">
+      <div class="arch-layer frontend">
+        <div class="layer-label">Frontend</div>
+        <div class="layer-content">
+          <div class="arch-box frontend-box">
+            <div class="box-label">App.tsx</div>
+            <div class="box-sublabel">Entry point</div>
+          </div>
+          <div class="arch-box frontend-box">
+            <div class="box-label">Router</div>
+            <div class="box-sublabel">Page navigation</div>
+          </div>
+          <div class="arch-box frontend-box">
+            <div class="box-label">Pages ({len(pages)})</div>
+            <div class="box-sublabel">UI views</div>
+          </div>
+          <div class="arch-box frontend-box">
+            <div class="box-label">Components ({len(components)})</div>
+            <div class="box-sublabel">Reusable UI</div>
+          </div>
+          <div class="arch-box frontend-box">
+            <div class="box-label">useApi</div>
+            <div class="box-sublabel">Data hooks</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector">
+        <div class="connector-line"></div>
+        <div class="connector-arrow"></div>
+        <div class="connector-label">HTTP /api/*</div>
+      </div>
+
+      <div class="arch-layer backend">
+        <div class="layer-label">Backend — {backend_stack}</div>
+        <div class="layer-content">{backend_boxes}
+        </div>
+      </div>
+
+      <div class="connector">
+        <div class="connector-line"></div>
+        <div class="connector-arrow"></div>
+        <div class="connector-label">JDBC / sqlite3</div>
+      </div>
+
+      <div class="arch-layer database">
+        <div class="layer-label">Database</div>
+        <div class="layer-content">
+          <div class="arch-box db-box">
+            <div class="box-label">SQLite</div>
+            <div class="box-sublabel">data.db &middot; {len(tables)} tables</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="section">
+      <div class="section-hdr"><div class="icon">\U0001f4c4</div> Pages</div>
+      <table>
+        <thead><tr><th>Page</th><th>File</th><th>Data</th></tr></thead>
+        <tbody>
+{pages_rows}        </tbody>
+      </table>
+    </div>
+    <div class="section">
+      <div class="section-hdr"><div class="icon">\U0001f9e9</div> Shared Components</div>
+      <table>
+        <thead><tr><th>Component</th><th>File</th></tr></thead>
+        <tbody>
+{comp_rows}        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="section">
+      <div class="section-hdr"><div class="icon">{backend_icon_char}</div> Backend Layer</div>
+      <table>
+        <thead><tr><th>Layer</th><th>File</th><th>Role</th></tr></thead>
+        <tbody>{backend_rows}
+        </tbody>
+      </table>
+    </div>
+    <div class="section">
+      <div class="section-hdr"><div class="icon">\U0001f5c4️</div> Data Model</div>
+      <table>
+        <thead><tr><th>Table</th><th>Columns</th></tr></thead>
+        <tbody>
+{data_rows}        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-hdr"><div class="icon">\U0001f310</div> API Endpoints</div>
+    <table>
+      <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+      <tbody>
+{api_rows}      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-hdr"><div class="icon">\U0001f4c1</div> File Structure</div>
+    <ul class="file-tree">
+      {tree_html}
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+    html_file.write_text(html, encoding="utf-8")
+
+
 # ── User-friendly error messages ─────────────────────────────────────────────
 
 def _friendly_error(raw: str) -> str:
@@ -529,6 +1175,7 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
                     title=raw.get("title", ""), has_app=True)
         _append_buildlog(project_name, _progress_logs.get(request_id, []),
                          event="Built from Figma", duration_s=_time.time()-_t0)
+        _generate_architecture(project_name, event="Built from Figma")
 
         # ── Token usage summary ───────────────────────────────────────────────
         for _line in token_tracker.format_summary(request_id, elapsed=_time.time() - _t0):
@@ -568,6 +1215,7 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
         progress=_progress,
         project_name_override=project_name_override,
         architecture=req.architecture,
+        backend_type=req.backend_type,
     )
 
     project_name = result["projectName"]
@@ -595,6 +1243,7 @@ def _run_generate_inner(req: GenerateRequest, request_id: str, _progress) -> dic
 
     _append_buildlog(project_name, _progress_logs.get(request_id, []),
                      event="Generated from prompt", duration_s=_elapsed)
+    _generate_architecture(project_name, event="Generated", backend_type=req.backend_type)
     _progress("ready")
     result["type"] = "react"
     return result
@@ -686,7 +1335,7 @@ def _validate_json_files(files: dict, prompt: str, instructions: str, _progress)
     return files
 
 
-def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = "", instructions: str = "") -> dict:
+def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = "", instructions: str = "", backend_type: str = "") -> dict:
     """
     Update an existing project's code based on a refinement prompt.
     Reads all existing source files, sends them + prompt to Claude, writes updated files back.
@@ -877,6 +1526,17 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
         # api/ tree — preserve API server, schema, seed, .env
         for f in api_dir.rglob("*") if api_dir.exists() else []:
             if f.is_file() and (f.suffix in (".py", ".sql", ".txt") or f.name == ".env"):
+                rel = f.relative_to(project_dir).as_posix()
+                try:
+                    existing[rel] = f.read_text(encoding="utf-8")
+                except Exception:
+                    pass
+        # backend/ tree — preserve Java Spring Boot files
+        backend_dir = project_dir / "backend"
+        for f in backend_dir.rglob("*") if backend_dir.exists() else []:
+            if f.is_file() and (f.suffix in (".java", ".xml", ".properties", ".sql") or f.name in (".env", ".backend_type")):
+                if "target" in f.parts or ".mvn" in f.parts:
+                    continue
                 rel = f.relative_to(project_dir).as_posix()
                 try:
                     existing[rel] = f.read_text(encoding="utf-8")
@@ -1120,7 +1780,10 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
                 if target_path in existing:
                     _target_content = existing[target_path][:40_000]
                     _fc2 += f"\n// FILE: {target_path}\n{_target_content}\n"
-                _schema_key = "api/schema.sql" if "api/schema.sql" in existing else "schema.sql"
+                _schema_key = next(
+                    (k for k in ("api/schema.sql", "backend/schema.sql", "schema.sql") if k in existing),
+                    "schema.sql"
+                )
                 _structural = [_schema_key, "src/types.ts", "src/App.tsx"]
                 for _ep in _structural:
                     if _ep in existing and _ep != target_path:
@@ -1241,8 +1904,18 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
         )
 
         # ── API-first: ensure schema exists, bundle API server ────────────────
+        # For refine: disk is the source of truth for backend type (project already exists)
+        bt_file = project_dir / "backend" / ".backend_type"
+        if bt_file.exists():
+            _bt_raw = bt_file.read_text(encoding="utf-8").strip()
+            backend_type = "java" if "java" in _bt_raw else _bt_raw
+        elif (project_dir / "backend" / "pom.xml").exists():
+            backend_type = "java"
+        elif not backend_type:
+            backend_type = "python"
+
         files = _ensure_schema_sql(files)
-        files = _bundle_api_server(files)
+        files = _bundle_api_server(files, backend_type=backend_type)
 
         port = _dev_ports.get(project_name) or _next_port()
         _dev_ports[project_name] = port
@@ -1252,6 +1925,7 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
             "api/app_server.py" in files or "app_server.py" in files
             or "api_server.py" in files
             or "api/schema.sql" in files or "schema.sql" in files
+            or "backend/.backend_type" in files or "backend/pom.xml" in files
         )
         api_port = _api_ports.get(project_name)
         if has_api_files and not api_port:
@@ -1263,6 +1937,18 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
         if api_port and "api/.env" in files:
             import re as _re_env
             files["api/.env"] = _re_env.sub(r"API_PORT=\d+", f"API_PORT={api_port}", files["api/.env"])
+
+        # Patch Java application.properties with the correct dynamic API port
+        if api_port and "backend/src/main/resources/application.properties" in files:
+            import re as _re_props
+            files["backend/src/main/resources/application.properties"] = _re_props.sub(
+                r"server\.port=\d+", f"server.port={api_port}",
+                files["backend/src/main/resources/application.properties"]
+            )
+        # Also patch backend/.env for Java backend
+        if api_port and "backend/.env" in files:
+            import re as _re_benv
+            files["backend/.env"] = _re_benv.sub(r"PORT=\d+", f"PORT={api_port}", files["backend/.env"])
 
         # Run the FULL postprocessor suite (includes table name validation,
         # vite config injection, DS aliasing, badge fixes, etc.)
@@ -1332,6 +2018,7 @@ def _run_refine(project_name: str, prompt: str, request_id: str, comment: str = 
 
         _append_buildlog(project_name, _progress_logs.get(request_id, []),
                          event="Refined", duration_s=_elapsed)
+        _generate_architecture(project_name, event="Refined", backend_type=backend_type)
         _progress("ready")
         return {
             "projectName": project_name,
@@ -1368,7 +2055,7 @@ async def api_refine(project_name: str, req: RefineRequest):
                 )
             else:
                 result = await loop.run_in_executor(
-                    _executor, _run_refine, project_name, req.prompt, request_id, req.comment, req.instructions
+                    _executor, _run_refine, project_name, req.prompt, request_id, req.comment, req.instructions, req.backend_type
                 )
             result["requestId"] = request_id
             _save_job(request_id, {
@@ -1436,6 +2123,7 @@ def _run_refine_with_architecture(project_name: str, req: RefineRequest, request
         progress=_progress,
         project_name_override=project_name,
         architecture=req.architecture,
+        backend_type=req.backend_type,
     )
 
     _progress("ready")
@@ -1455,6 +2143,7 @@ def _run_refine_with_architecture(project_name: str, req: RefineRequest, request
         }
         _save_draft_to_disk(project_name, draft_data)
 
+    _generate_architecture(project_name, event="Refined (pipeline)", backend_type=req.backend_type)
     return result
 
 
@@ -1504,6 +2193,33 @@ async def api_project_buildlog(project_name: str):
         return {"runs": []}
 
 
+@app.get("/api/projects/{project_name}/architecture")
+async def api_project_architecture(project_name: str):
+    """Return persisted architecture markdown for a project."""
+    from agents.uigen_agent import GENERATED_DIR
+    arch_file = GENERATED_DIR / project_name / ".architecture.md"
+    if not arch_file.exists():
+        return {"markdown": "", "exists": False}
+    try:
+        return {"markdown": arch_file.read_text(encoding="utf-8"), "exists": True}
+    except Exception:
+        return {"markdown": "", "exists": False}
+
+
+@app.get("/api/projects/{project_name}/architecture.html")
+async def api_project_architecture_html(project_name: str):
+    """Return persisted architecture HTML for a project."""
+    from agents.uigen_agent import GENERATED_DIR
+    from fastapi.responses import HTMLResponse
+    html_file = GENERATED_DIR / project_name / ".architecture.html"
+    if not html_file.exists():
+        return HTMLResponse("<p>No architecture yet.</p>", status_code=404)
+    try:
+        return HTMLResponse(html_file.read_text(encoding="utf-8"))
+    except Exception:
+        return HTMLResponse("<p>Error reading architecture.</p>", status_code=500)
+
+
 @app.post("/api/generate")
 async def api_generate(req: GenerateRequest):
     """
@@ -1524,6 +2240,8 @@ async def api_generate(req: GenerateRequest):
         project_slug = _re_gen.sub(r"[^a-z0-9-]", "-", req.project_name.lower()).strip("-")
     if project_slug:
         _project_request_ids[project_slug] = request_id
+        # Store backend_type in registry immediately so UI reflects it during build
+        registry_upsert(project_slug, backendType=req.backend_type or "python")
 
     # Persist initial job state
     _save_job(request_id, {
@@ -1681,7 +2399,10 @@ def _run_docker_build(project_name: str, request_id: str) -> dict:
     import time as _t
     _t0 = _t.time()
     from agents.uigen_agent import GENERATED_DIR
-    from agents.docker_agent import build_image, get_status
+    from agents.docker_agent import build_image, get_status, is_docker_available
+
+    if not is_docker_available():
+        raise RuntimeError("Docker Desktop is not running. Please start Docker Desktop and try again.")
 
     project_dir = GENERATED_DIR / project_name
     if not project_dir.exists():
@@ -1697,6 +2418,13 @@ def _run_docker_build(project_name: str, request_id: str) -> dict:
 
     ok, out = build_image(project_name, project_dir, progress=_progress)
     if not ok:
+        # Detect Docker connectivity issues and provide a friendly message
+        lower = out.lower()
+        if any(k in lower for k in ("grpc", "eof", "connection refused", "not found", "daemon", "pipe")):
+            raise RuntimeError(
+                "Docker Desktop is not fully running. Please ensure Docker Desktop is started "
+                "and ready (check the whale icon in the system tray), then try again."
+            )
         raise RuntimeError(out)
     _progress(f"docker_build:done")
     return get_status(project_name)
@@ -3120,12 +3848,36 @@ async def proxy_vite(project_name: str, path: str, request: Request):
     """Reverse-proxy requests for a React/Vite project through FastAPI (same-origin for iframe)."""
     import urllib.request as _ureq
     import urllib.error as _uerr
+    from agents.uigen_agent import _api_ports
+
+    # Route API requests directly to the backend server (bypasses Vite proxy issues with base path)
+    if path.startswith("api/") or path == "api":
+        api_port = _api_ports.get(project_name)
+        if api_port:
+            api_target = f"http://127.0.0.1:{api_port}/{path}"
+            qs = str(request.query_params)
+            if qs:
+                api_target += "?" + qs
+            try:
+                body = await request.body()
+                fwd_headers = {k: v for k, v in request.headers.items()
+                               if k.lower() not in ("host", "content-length")}
+                http_req = _ureq.Request(api_target, data=body or None,
+                                          method=request.method, headers=fwd_headers)
+                with _ureq.urlopen(http_req, timeout=150) as resp:
+                    content = resp.read()
+                    headers = {k: v for k, v in resp.headers.items()
+                               if k.lower() not in ("transfer-encoding", "connection", "keep-alive")}
+                    return Response(content=content, status_code=resp.status,
+                                    headers=headers, media_type=resp.headers.get("content-type"))
+            except _uerr.HTTPError as e:
+                return Response(content=e.read(), status_code=e.code)
+            except (_uerr.URLError, OSError):
+                raise HTTPException(502, f"Backend API server not reachable on port {api_port}")
+
     port = _resolve_vite_port(project_name)
     if not port:
-        # Auto-start the project if it has a registered port but process isn't running
-        port = await _auto_start_project(project_name)
-        if not port:
-            raise HTTPException(503, "Project not running")
+        raise HTTPException(503, "Project not running. Start it from the sidebar.")
     # Vite is configured with base='/app/{name}/' so all its assets live under that prefix
     base_url = "http://127.0.0.1:" + str(port) + "/app/" + project_name + "/"
     target = _safe_proxy_url(base_url, path, str(request.query_params))
@@ -3146,24 +3898,7 @@ async def proxy_vite(project_name: str, path: str, request: Request):
     except _uerr.HTTPError as e:
         return Response(content=e.read(), status_code=e.code)
     except (_uerr.URLError, OSError) as e:
-        # Connection refused — Vite server died. Try to auto-start once.
-        port = await _auto_start_project(project_name)
-        if not port:
-            raise HTTPException(502, "Proxy error: " + str(e))
-        # Retry the request after auto-start
-        base_url = "http://127.0.0.1:" + str(port) + "/app/" + project_name + "/"
-        target = _safe_proxy_url(base_url, path, str(request.query_params))
-        try:
-            http_req = _ureq.Request(target, data=body or None,
-                                      method=request.method, headers=fwd_headers)
-            with _ureq.urlopen(http_req, timeout=proxy_timeout) as resp:
-                content = resp.read()
-                headers = {k: v for k, v in resp.headers.items()
-                           if k.lower() not in ("transfer-encoding", "connection", "keep-alive")}
-                return Response(content=content, status_code=resp.status,
-                                headers=headers, media_type=resp.headers.get("content-type"))
-        except Exception as e2:
-            raise HTTPException(502, "Proxy error after auto-start: " + str(e2))
+        raise HTTPException(502, "App not reachable. It may have stopped — start it from the sidebar.")
     except Exception as e:
         raise HTTPException(502, "Proxy error: " + str(e))
 

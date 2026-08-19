@@ -44,26 +44,33 @@ function parse(value: string): Docs {
   const docs: Docs = { prd: '', trd: '', specs: '', notes: '' }
   if (!value.trim()) return docs
 
-  // Try to split by our markers
   const keys: (DocKey | 'notes')[] = ['prd', 'trd', 'specs', 'notes']
-  let remaining = value
+  const allMarkers = Object.values(MARKERS)
 
   for (let i = 0; i < keys.length; i++) {
     const marker = MARKERS[keys[i]]
-    const idx = remaining.indexOf(marker)
+    const idx = value.indexOf(marker)
     if (idx === -1) continue
-    // Find the next marker or end
-    let endIdx = remaining.length
+    // Find end: next known marker or end of string
+    let endIdx = value.length
     for (let j = i + 1; j < keys.length; j++) {
-      const nextIdx = remaining.indexOf(MARKERS[keys[j]], idx + marker.length)
+      const nextIdx = value.indexOf(MARKERS[keys[j]], idx + marker.length)
       if (nextIdx !== -1) { endIdx = nextIdx; break }
     }
-    // Also check for --- separator before next marker
-    const sepIdx = remaining.indexOf('\n\n---\n\n', idx + marker.length)
-    if (sepIdx !== -1 && sepIdx < endIdx) endIdx = sepIdx
+    // Only treat --- as separator if followed by one of our markers
+    let searchFrom = idx + marker.length
+    while (searchFrom < endIdx) {
+      const sepIdx = value.indexOf('\n\n---\n\n', searchFrom)
+      if (sepIdx === -1 || sepIdx >= endIdx) break
+      const afterSep = value.slice(sepIdx + 7).trimStart()
+      if (allMarkers.some(m => afterSep.startsWith(m))) {
+        endIdx = sepIdx
+        break
+      }
+      searchFrom = sepIdx + 7
+    }
 
-    const content = remaining.slice(idx + marker.length, endIdx).trim()
-    docs[keys[i]] = content
+    docs[keys[i]] = value.slice(idx + marker.length, endIdx).trim()
   }
 
   // If no markers found, treat entire content as notes (backward compat)

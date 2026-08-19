@@ -558,7 +558,14 @@ def _start_vite(project_dir: Path, port: int) -> subprocess.Popen:
 
 
 def _start_api_server(project_dir: Path, api_port: int = 8080) -> subprocess.Popen | None:
-    """Start the Python API server for generated apps (api/app_server.py)."""
+    """Start the API server for generated apps (Python or Java Spring Boot)."""
+    # Check if this is a Java Spring Boot project
+    backend_type_file = project_dir / "backend" / ".backend_type"
+    if backend_type_file.exists():
+        backend_type = backend_type_file.read_text(encoding="utf-8").strip()
+        if backend_type == "java-springboot":
+            return _start_java_api_server(project_dir, api_port)
+
     api_dir = project_dir / "api"
     server_file = api_dir / "app_server.py"
 
@@ -598,6 +605,69 @@ def _start_api_server(project_dir: Path, api_port: int = 8080) -> subprocess.Pop
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
     proc = subprocess.Popen(["python", str(server_file)], **kwargs)
     print(f"[api_server] Started Python API server on port {api_port} (PID {proc.pid}, cwd={cwd})", flush=True)
+    return proc
+
+
+def _start_java_api_server(project_dir: Path, api_port: int = 8080) -> subprocess.Popen | None:
+    """Start the Java Spring Boot API server."""
+    backend_dir = project_dir / "backend"
+    pom_file = backend_dir / "pom.xml"
+    if not pom_file.exists():
+        print("[api_server] WARNING: backend/pom.xml not found", flush=True)
+        return None
+
+    env = os.environ.copy()
+    env["PORT"] = str(api_port)
+    env["DB_PATH"] = str(backend_dir / "data.db")
+
+    # Read backend/.env for JAVA_HOME and MAVEN_HOME
+    backend_env_file = backend_dir / ".env"
+    if backend_env_file.exists():
+        for line in backend_env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, val = line.partition("=")
+                if val.strip():
+                    env[key.strip()] = val.strip()
+
+    # Ensure JAVA_HOME is set — detect if missing
+    if not env.get("JAVA_HOME"):
+        for candidate in [r"C:\Program Files\Java\jdk-21", r"C:\Program Files\Java\jdk-17"]:
+            if Path(candidate).exists():
+                env["JAVA_HOME"] = candidate
+                break
+
+    # Add Java and Maven to PATH
+    java_home = env.get("JAVA_HOME", "")
+    maven_home = env.get("MAVEN_HOME", "")
+    extra_path = ""
+    if java_home:
+        extra_path += str(Path(java_home) / "bin") + os.pathsep
+    if maven_home:
+        extra_path += str(Path(maven_home) / "bin") + os.pathsep
+    if extra_path:
+        env["PATH"] = extra_path + env.get("PATH", "")
+
+    log_file = open(str(project_dir / "api_server.log"), "w", encoding="utf-8", errors="replace")
+    kwargs: dict = {"cwd": str(backend_dir), "env": env, "stdout": log_file, "stderr": log_file}
+    if os.name == "nt":
+        # CREATE_NO_WINDOW prevents a visible CMD prompt for .cmd batch files
+        # while CREATE_NEW_PROCESS_GROUP allows independent termination
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+
+    # Prefer system mvn over mvnw (avoids download issues)
+    mvn_cmd = None
+    if maven_home:
+        system_mvn = Path(maven_home) / "bin" / ("mvn.cmd" if os.name == "nt" else "mvn")
+        if system_mvn.exists():
+            mvn_cmd = str(system_mvn)
+    if not mvn_cmd:
+        mvnw = backend_dir / ("mvnw.cmd" if os.name == "nt" else "mvnw")
+        mvn_cmd = str(mvnw) if mvnw.exists() else "mvn"
+
+    cmd = [mvn_cmd, "spring-boot:run", f"-Dspring-boot.run.arguments=--server.port={api_port}"]
+    proc = subprocess.Popen(cmd, **kwargs)
+    print(f"[api_server] Started Java Spring Boot server on port {api_port} (PID {proc.pid}, JAVA_HOME={java_home})", flush=True)
     return proc
 
 
@@ -767,10 +837,13 @@ def _ensure_boilerplate(files: dict, project_name: str) -> dict:
 # ── API Server bundling ───────────────────────────────────────────────────────
 _SKILLS_DIR = Path(__file__).parent / "services_engineer" / "templates"
 
-def _bundle_api_server(files: dict) -> dict:
+def _bundle_api_server(files: dict, backend_type: str = "python") -> dict:
     """If schema.sql is present, bundle API server into api/ subfolder + useApi hook."""
     if "schema.sql" not in files:
         return files
+
+    if backend_type == "java":
+        return _bundle_java_api_server(files)
 
     # Move schema.sql and seed.sql into api/ subfolder
     files["api/schema.sql"] = files.pop("schema.sql")
@@ -814,6 +887,68 @@ def _bundle_api_server(files: dict) -> dict:
     files["api/requirements.txt"] = "fastapi\nuvicorn\npython-dotenv\nopenai\nhttpx\nopenpyxl\nPyMuPDF\n"
 
     print(f"[_bundle_api_server] Bundled into api/: app_server.py + schema.sql + .env + requirements.txt", flush=True)
+    return files
+
+
+_SPRINGBOOT_DIR = _SKILLS_DIR / "springboot"
+
+def _bundle_java_api_server(files: dict) -> dict:
+    """Bundle a Spring Boot backend instead of the Python FastAPI server."""
+    # Move schema.sql and seed.sql into backend/ (Spring Boot working dir)
+    files["backend/schema.sql"] = files.pop("schema.sql")
+    if "seed.sql" in files:
+        seed_content = files.pop("seed.sql")
+        seed_content = seed_content.replace("\\'", "''")
+        files["backend/seed.sql"] = seed_content
+
+    # Bundle all Spring Boot template files
+    if not _SPRINGBOOT_DIR.exists():
+        print("[_bundle_api_server] WARNING: springboot template dir not found", flush=True)
+        return files
+
+    for f in _SPRINGBOOT_DIR.rglob("*"):
+        if f.is_file():
+            rel = f.relative_to(_SPRINGBOOT_DIR).as_posix()
+            try:
+                files[f"backend/{rel}"] = f.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                pass
+
+    # Bundle useApi hook (same frontend hook — just hits /api/{table})
+    hook_template = _SKILLS_DIR / "useApi.hook.ts"
+    if hook_template.exists():
+        files["src/hooks/useApi.ts"] = hook_template.read_text(encoding="utf-8")
+
+    # Bundle ExportToolbar shared component
+    export_toolbar = _SKILLS_DIR / "ExportToolbar.component.tsx"
+    if export_toolbar.exists():
+        files["src/components/ExportToolbar.tsx"] = export_toolbar.read_text(encoding="utf-8")
+
+    # Mark backend type in a metadata file so _start_api_server knows what to launch
+    files["backend/.backend_type"] = "java-springboot"
+
+    # Generate .env with auto-detected Java/Maven paths
+    java_home = os.environ.get("JAVA_HOME", "")
+    maven_home = os.environ.get("MAVEN_HOME", os.environ.get("M2_HOME", ""))
+    if not java_home:
+        # Try to detect from common Windows locations
+        for candidate in [r"C:\Program Files\Java\jdk-21", r"C:\Program Files\Java\jdk-17"]:
+            if Path(candidate).exists():
+                java_home = candidate
+                break
+    if not maven_home:
+        for candidate in [r"C:\Program Files\Maven\3.9.16", r"C:\Program Files\Maven\apache-maven-3.9.9"]:
+            if Path(candidate).exists():
+                maven_home = candidate
+                break
+    env_template = _SPRINGBOOT_DIR / "env_template.txt"
+    if env_template.exists():
+        env_content = env_template.read_text(encoding="utf-8")
+        env_content = env_content.replace("{{JAVA_HOME}}", java_home)
+        env_content = env_content.replace("{{MAVEN_HOME}}", maven_home)
+        files["backend/.env"] = env_content
+
+    print(f"[_bundle_api_server] Bundled Java Spring Boot backend into backend/", flush=True)
     return files
 
 
@@ -1003,7 +1138,7 @@ def _repair_json(content: str, rel_path: str) -> str:
     return content
 
 
-_PRESERVE_FILES = {".history.json", ".buildlog.json", ".meta.json", ".docker.json", "screenshots", "docker", "app.db", "data.db"}
+_PRESERVE_FILES = {".history.json", ".buildlog.json", ".meta.json", ".docker.json", ".architecture.md", ".architecture.html", "screenshots", "docker", "app.db", "data.db"}
 
 def _write_files(project_dir: Path, files: dict):
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -1608,12 +1743,17 @@ def kill_server(project_name: str, forget_port: bool = False):
         _save_ports()
 
 
-def _augment_prompt(prompt: str) -> str:
+def _augment_prompt(prompt: str, backend_type: str = "python") -> str:
     """Append mandatory system constraints to every generation prompt."""
+    if backend_type == "java":
+        backend_desc = "a Java Spring Boot + JDBC + SQLite backend"
+    else:
+        backend_desc = "a SQLite database + Python FastAPI backend"
+
     notes = [
         "TECH STACK (MANDATORY — override any spec/TRD): "
         "This platform generates React 18 + TypeScript + Tailwind CSS + Vite frontend apps "
-        "with a SQLite database + Python FastAPI backend. "
+        f"with {backend_desc}. "
         "If the instructions/specs mention other technologies (PostgreSQL, Redis, Express, "
         "Node.js backend, MongoDB, AWS services, Docker, Kubernetes, etc.), IGNORE those "
         "technology choices and use the TurboUIGen stack instead. "
@@ -1638,12 +1778,14 @@ def _augment_prompt(prompt: str) -> str:
 
 def generate_project(prompt: str, progress=None, project_name_override: str | None = None,
                      architecture: dict | None = None,
-                     reference_images: list[dict] | None = None) -> dict:
+                     reference_images: list[dict] | None = None,
+                     backend_type: str = "python") -> dict:
     """
     Generate a React/TS/Tailwind project from a prompt.
     progress(step: str) is called at each stage for CLI/UI feedback.
     architecture: pre-approved architecture from /api/draft (skips Stage 1 if provided).
     reference_images: list of Figma screenshots [{name, base64_data}] for visual fidelity.
+    backend_type: "python" (FastAPI + SQLite) or "java" (Spring Boot + JDBC/SQLite).
     Returns project info dict.
     """
     if not os.environ.get("LITELLM_API_BASE") and not os.environ.get("LITELLM_API_KEY"):
@@ -1676,7 +1818,7 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
 
             # Read all existing source files for selective regeneration
             for fp in _existing_dir.rglob("*"):
-                if fp.is_file() and fp.suffix in (".tsx", ".ts", ".css", ".sql", ".py", ".html", ".json", ".js", ".txt"):
+                if fp.is_file() and fp.suffix in (".tsx", ".ts", ".css", ".sql", ".py", ".html", ".json", ".js", ".txt", ".java", ".properties", ".xml"):
                     rel = fp.relative_to(_existing_dir).as_posix()
                     if rel.startswith("node_modules/") or rel.startswith("."):
                         continue
@@ -1701,7 +1843,7 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
         orchestrator.approved_architecture = architecture
     if reference_images:
         orchestrator.reference_images = reference_images
-    data = orchestrator.generate(_augment_prompt(prompt))
+    data = orchestrator.generate(_augment_prompt(prompt, backend_type=backend_type))
 
     if project_name_override:
         project_name = re.sub(r"[^a-z0-9-]", "-", project_name_override.lower()).strip("-") or "app"
@@ -1724,13 +1866,14 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
     # ── ALL apps use SQLite + API — ensure schema.sql always exists ─────────
     files = _ensure_schema_sql(files, force=True)
     # ── Bundle API server + useApi hook (always — every app has an API) ────
-    files = _bundle_api_server(files)
+    files = _bundle_api_server(files, backend_type=backend_type)
 
     # Assign API port if this project has an API server
     has_api_files = (
         "api/app_server.py" in files or "app_server.py" in files
         or "api_server.py" in files
         or "api/schema.sql" in files or "schema.sql" in files
+        or "backend/.backend_type" in files
     )
     api_port = _api_ports.get(project_name)
     if has_api_files and not api_port:
@@ -1742,6 +1885,13 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
     if api_port and "api/.env" in files:
         import re as _re_env
         files["api/.env"] = _re_env.sub(r"API_PORT=\d+", f"API_PORT={api_port}", files["api/.env"])
+    # For Java backend, patch application.properties with the port
+    if api_port and "backend/src/main/resources/application.properties" in files:
+        import re as _re_env
+        files["backend/src/main/resources/application.properties"] = _re_env.sub(
+            r"server\.port=\$\{PORT:\d+\}", f"server.port=${{PORT:{api_port}}}",
+            files["backend/src/main/resources/application.properties"]
+        )
 
     # Wire the design system alias and run all post-processors
     # Pass project_name + port + api_port so _inject_api_proxy builds the full server block
@@ -1815,11 +1965,12 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
     _write_files(project_dir, files)
 
     _p("start")
-    # Start API server first (if app_server.py exists), then Vite
+    # Start API server first (if app_server.py or Spring Boot backend exists), then Vite
     has_api = (
         (project_dir / "api" / "app_server.py").exists()
         or (project_dir / "app_server.py").exists()
         or (project_dir / "api" / "schema.sql").exists()
+        or (project_dir / "backend" / ".backend_type").exists()
     )
     api_port = _api_ports.get(project_name)
     if has_api:
@@ -1832,7 +1983,8 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
         api_proc = None
     if api_proc:
         _api_servers[project_name] = api_proc
-        _wait_for_api(api_port, timeout=15)
+        api_timeout = 90 if backend_type == "java" else 15
+        _wait_for_api(api_port, timeout=api_timeout)
     proc = _start_vite(project_dir, port)
     _dev_servers[project_name] = proc
 
@@ -1903,6 +2055,8 @@ def start_project(project_name: str) -> dict:
         or (project_dir / "api_server.py").exists()
         or (project_dir / "api" / "schema.sql").exists()
         or (project_dir / "schema.sql").exists()
+        or (project_dir / "backend" / ".backend_type").exists()
+        or (project_dir / "backend" / "pom.xml").exists()
     )
     # Assign or reuse API port for this project
     api_port = _api_ports.get(project_name)
@@ -1951,17 +2105,31 @@ def start_project(project_name: str) -> dict:
             _api_ports[project_name] = api_port
             _save_ports()
         # Patch .env on disk so it matches the assigned port
+        import re as _re_env
         env_file = project_dir / "api" / ".env"
         if env_file.exists():
-            import re as _re_env
             env_text = env_file.read_text(encoding="utf-8")
             patched_env = _re_env.sub(r"API_PORT=\d+", f"API_PORT={api_port}", env_text)
             if patched_env != env_text:
                 env_file.write_text(patched_env, encoding="utf-8")
+        # Java backend: patch PORT in backend/.env and server.port in application.properties
+        backend_env = project_dir / "backend" / ".env"
+        if backend_env.exists():
+            env_text = backend_env.read_text(encoding="utf-8")
+            patched_env = _re_env.sub(r"PORT=\d+", f"PORT={api_port}", env_text)
+            if patched_env != env_text:
+                backend_env.write_text(patched_env, encoding="utf-8")
+        app_props = project_dir / "backend" / "src" / "main" / "resources" / "application.properties"
+        if app_props.exists():
+            props_text = app_props.read_text(encoding="utf-8")
+            patched_props = _re_env.sub(r"server\.port=\d+", f"server.port={api_port}", props_text)
+            if patched_props != props_text:
+                app_props.write_text(patched_props, encoding="utf-8")
         api_proc = _start_api_server(project_dir, api_port=api_port)
         if api_proc:
             _api_servers[project_name] = api_proc
-            _wait_for_api(api_port, timeout=15)
+            is_java = (project_dir / "backend" / "pom.xml").exists()
+            _wait_for_api(api_port, timeout=90 if is_java else 15)
     proc = _start_vite(project_dir, port)
     _dev_servers[project_name] = proc
     wait_for_port(port, timeout=60)
@@ -2161,6 +2329,19 @@ def list_projects() -> list[dict]:
             running = (name in _dev_servers) or bool(health.get(port))
             url = ("/app/" + name + "/") if (running and port) else None
 
+        # Detect backend type: disk markers first, then registry fallback
+        proj_dir = GENERATED_DIR / name
+        bt_file = proj_dir / "backend" / ".backend_type"
+        if bt_file.exists():
+            _bt_raw = bt_file.read_text(encoding="utf-8").strip()
+            _bt = "java" if "java" in _bt_raw else _bt_raw
+        elif (proj_dir / "backend" / "pom.xml").exists():
+            _bt = "java"
+        elif entry.get("backendType"):
+            _bt = entry["backendType"]
+        else:
+            _bt = "python"
+
         projects.append({
             "name":        name,
             "title":       entry.get("title", name),
@@ -2174,5 +2355,6 @@ def list_projects() -> list[dict]:
             "sourceLabel": entry.get("sourceLabel", "Instructions"),
             "figmaUrl":    entry.get("figmaUrl", ""),
             "prompt":      entry.get("prompt", ""),
+            "backendType": _bt,
         })
     return projects

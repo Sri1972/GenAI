@@ -160,6 +160,7 @@ def cmd_generate(args):
             prompt,
             progress=_progress,
             project_name_override=args.name or None,
+            backend_type=args.backend,
         )
     except Exception as e:
         print(f"\n{RED}Error: {e}{RESET}")
@@ -248,6 +249,7 @@ def cmd_refine(args):
             prompt,
             progress=_progress,
             project_name_override=project_name,
+            backend_type=args.backend,
         )
     except Exception as e:
         print(f"\n{RED}Error: {e}{RESET}")
@@ -355,6 +357,7 @@ def main():
     p_gen.add_argument("--notes", default="", help="Path to additional notes file")
     p_gen.add_argument("--name", "-n", default="", help="Project name override (kebab-case)")
     p_gen.add_argument("--figma", "-f", default="", help="Figma file URL — exports via REST API + generates app")
+    p_gen.add_argument("--backend", "-b", choices=["python", "java"], default="python", help="Backend type: python (FastAPI) or java (Spring Boot)")
     p_gen.add_argument("--no-open", action="store_true", help="Don't open browser after generation")
     p_gen.set_defaults(func=cmd_generate)
 
@@ -367,6 +370,7 @@ def main():
     p_ref.add_argument("--trd", default="", help="Path to Technical Requirements Document")
     p_ref.add_argument("--specs", default="", help="Path to Technical Specifications")
     p_ref.add_argument("--notes", default="", help="Path to additional notes file")
+    p_ref.add_argument("--backend", "-b", choices=["python", "java"], default="python", help="Backend type: python (FastAPI) or java (Spring Boot)")
     p_ref.add_argument("--no-open", action="store_true", help="Don't open browser after refinement")
     p_ref.set_defaults(func=cmd_refine)
 

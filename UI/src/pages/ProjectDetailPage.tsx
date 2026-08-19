@@ -1,9 +1,9 @@
 import {
   AlertCircle, ArrowLeft, CheckCircle, Clock, Container, Copy, Download,
-  ExternalLink, FileText, Image, Layers, Palette, Play, RefreshCw, Send, Square,
+  ExternalLink, FileText, Image, Layers, LayoutGrid, Palette, Play, RefreshCw, Send, Square,
   Terminal, Trash2, Upload,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useProjectsCtx } from '../App'
 import { Project } from '../types'
@@ -12,6 +12,7 @@ import ResizablePanels from '../components/ResizablePanels'
 import StepProgress from '../components/StepProgress'
 import InstructionsModal, { InstructionsBadge } from '../components/InstructionsModal'
 import { api, DraftResult } from '../hooks/useApi'
+import { draftToHtml } from '../utils/draftToHtml'
 import { BuildLogRun, DockerStatus, GenerateResult, GenerateStep, HistoryEvent } from '../types'
 
 
@@ -29,6 +30,50 @@ function fmtTime(iso: string) {
 function splitLogLine(line: string): { prefix: string; body: string } {
   const m = line.match(/^(\[\d{2}:\d{2}:\d{2} \+[\d.]+s\])\s*(.*)$/)
   return m ? { prefix: m[1], body: m[2] } : { prefix: '', body: line }
+}
+
+// Animated draft progress with elapsed timer and steps
+const DRAFT_STEPS = ['Analyzing requirements', 'Designing page layouts', 'Creating wireframes', 'Finalizing draft']
+function DraftProgress() {
+  const [elapsed, setElapsed] = useState(0)
+  const startRef = useRef(Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const activeStep = Math.min(Math.floor(elapsed / 8), DRAFT_STEPS.length - 1)
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-4 px-8">
+      <div className="relative w-14 h-14">
+        <svg className="w-14 h-14 animate-spin" viewBox="0 0 56 56">
+          <circle cx="28" cy="28" r="24" fill="none" stroke="#e0e7ff" strokeWidth="4" />
+          <circle cx="28" cy="28" r="24" fill="none" stroke="#4f46e5" strokeWidth="4"
+            strokeDasharray="150.8" strokeDashoffset={150.8 * (1 - Math.min(elapsed / 45, 0.92))}
+            strokeLinecap="round" className="transition-all duration-1000" />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-indigo-700">
+          {elapsed}s
+        </span>
+      </div>
+      <div className="text-center">
+        <p className="text-sm font-medium text-indigo-700 mb-3">Generating draft wireframe…</p>
+        <div className="flex flex-col gap-1.5 text-left">
+          {DRAFT_STEPS.map((s, i) => (
+            <div key={i} className={`flex items-center gap-2 text-xs transition-colors ${
+              i < activeStep ? 'text-emerald-600' : i === activeStep ? 'text-indigo-600 font-medium' : 'text-slate-300'
+            }`}>
+              {i < activeStep
+                ? <CheckCircle size={12} />
+                : i === activeStep
+                  ? <span className="w-3 h-3 rounded-full border-2 border-indigo-400 border-t-indigo-600 animate-spin" />
+                  : <span className="w-3 h-3 rounded-full border border-slate-200" />}
+              {s}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // Internal step-control event names — never shown as log lines
@@ -72,6 +117,7 @@ export default function ProjectDetailPage() {
   const [prompt,        setPrompt]    = useState('')
   const [figmaUrl,      setFigmaUrl]  = useState('')
   const [comment,       setComment]   = useState('')
+  const [backendType,   setBackend]   = useState<'python' | 'java'>('python')
   const [instructions,  setInstructions] = useState('')
   const [showInstrModal, setShowInstrModal] = useState(false)
   const [viewInstructions, setViewInstructions] = useState<string | null>(null)
@@ -79,14 +125,24 @@ export default function ProjectDetailPage() {
   const [history,   setHistory]  = useState<HistoryEvent[]>([])
   const [showHistory,setShowHist]= useState(false)
   const [buildLog,  setBuildLog] = useState<BuildLogRun[]>([])
-  const [rightTab,  setRightTab] = useState<'preview' | 'log' | 'history' | 'screenshots' | 'docker' | 'draft'>('preview')
+  const [rightTab,  setRightTab] = useState<'preview' | 'log' | 'history' | 'screenshots' | 'docker' | 'draft' | 'architecture'>('preview')
   const [screenshots, setScreenshots] = useState<{ filename: string; data: string; mimetype: string }[]>([])
   const [selectedShot, setSelectedShot] = useState<number>(0)
   const [docker,       setDocker]       = useState<DockerStatus | null>(null)
   const [dockerBusy,   setDockerBusy]   = useState<string | null>(null)  // 'build'|'run'|'stop'|'start'|'delete'|'download'
   const [dockerLog,    setDockerLog]    = useState<string[]>([])
+  const [dockerError,  setDockerError]  = useState<string | null>(null)
+  const [containerReady, setContainerReady] = useState(true)
+  const dockerPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const healthPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [draft,        setDraft]        = useState<DraftResult | null>(null)
   const [draftLoading, setDraftLoading] = useState(false)
+  const [architecture, setArchitecture] = useState<string>('')
+
+  const loadArchitecture = async () => {
+    if (!name) return
+    try { const r = await api.getArchitecture(name); setArchitecture(r.markdown || '') } catch {}
+  }
 
   const loadDockerStatus = async () => {
     if (!name) return
@@ -106,11 +162,22 @@ export default function ProjectDetailPage() {
     }
   }, [name, projects, project])
 
+  // Auto-detect backend type from project metadata (locked once app is built)
+  useEffect(() => {
+    if (project?.backendType) {
+      setBackend(project.backendType)
+    }
+  }, [project?.backendType, name])
+
   // Reset local state when switching projects
   useEffect(() => {
+    if (dockerPollRef.current) { clearInterval(dockerPollRef.current); dockerPollRef.current = null }
+    if (healthPollRef.current) { clearInterval(healthPollRef.current); healthPollRef.current = null }
+    setContainerReady(true)
     setPrompt('')
     setFigmaUrl('')
     setComment('')
+    setInstructions('')
     setHistory([])
     setShowHist(false)
     setScreenshots([])
@@ -118,6 +185,7 @@ export default function ProjectDetailPage() {
     setDocker(null)
     setDockerLog([])
     setDockerBusy(null)
+    setDockerError(null)
     setDraft(null)
 
     // Don't override rightTab if a build is already in progress (loading state from context)
@@ -134,6 +202,7 @@ export default function ProjectDetailPage() {
       }
     }
 
+    // Show preview if app is already running, otherwise clear
     const p = projects.find(x => x.name === name)
     if (p?.running && p.url) {
       setPreview(p.url)
@@ -142,10 +211,12 @@ export default function ProjectDetailPage() {
     }
   }, [name])
 
-  // Sync preview URL when project starts/stops externally
+  // Sync preview URL when project starts/stops (e.g. user clicks Start in sidebar)
   useEffect(() => {
     if (project?.running && project.url) {
       setPreview(project.url)
+    } else if (project && !project.running) {
+      setPreview(null)
     }
   }, [project?.running, project?.url])
 
@@ -179,7 +250,7 @@ export default function ProjectDetailPage() {
     } catch {}
   }
 
-  useEffect(() => { loadHistory(); loadBuildLog(); loadScreenshots(); loadDockerStatus() }, [name])
+  useEffect(() => { loadHistory(); loadBuildLog(); loadScreenshots(); loadDockerStatus(); loadArchitecture() }, [name])
 
   const parseMessages = (msgs: string[]) => {
     const logLines: string[] = []
@@ -290,6 +361,7 @@ export default function ProjectDetailPage() {
 
       setStep('ready')
       setLoading(false)
+      setInstructions('')
 
       if (data?.url) {
         setResult(data)
@@ -300,12 +372,12 @@ export default function ProjectDetailPage() {
         const p = updated.find(x => x.name === name)
         if (p?.url) { setPreview(p.url); onPreview(p.url) }
       }
-      refreshProjects(); loadHistory(); loadBuildLog(); loadScreenshots()
+      refreshProjects(); loadHistory(); loadBuildLog(); loadScreenshots(); loadArchitecture()
 
     } catch (e: any) {
       setError(e.message); setStep(null); setLoading(false)
       setRightTab('log')  // Stay on log tab to show what happened
-      loadBuildLog()
+      loadBuildLog(); loadArchitecture()
     }
   }
 
@@ -331,7 +403,7 @@ export default function ProjectDetailPage() {
           const updated = await api.listProjects()
           const p = updated.find(x => x.name === name)
           if (p?.url) { setPreview(p.url); onPreview(p.url) }
-          refreshProjects(); loadBuildLog()
+          refreshProjects(); loadBuildLog(); loadArchitecture()
           return
         }
 
@@ -344,7 +416,7 @@ export default function ProjectDetailPage() {
           }
           setError(job.error || 'Generation failed')
           setRightTab('log')
-          loadBuildLog()
+          loadBuildLog(); loadArchitecture()
           return
         }
 
@@ -385,7 +457,7 @@ export default function ProjectDetailPage() {
             const p = updated.find(x => x.name === name)
             if (p?.url) { setPreview(p.url); onPreview(p.url) }
           }
-          refreshProjects(); loadHistory(); loadBuildLog(); loadScreenshots()
+          refreshProjects(); loadHistory(); loadBuildLog(); loadScreenshots(); loadArchitecture()
         }
       } catch (e: any) {
         if (!cancelled) {
@@ -398,12 +470,14 @@ export default function ProjectDetailPage() {
     return () => { cancelled = true }
   }, [name])
 
+  const canDraft = !!(prompt.trim() || instructions.trim() || project?.prompt)
   const previewDraft = async () => {
-    if (!prompt.trim() || draftLoading || loading) return
+    if (!canDraft || draftLoading || loading) return
+    const effectivePrompt = prompt.trim() || project?.prompt || 'Please create a draft using the instructions provided.'
     setDraftLoading(true); setError('')
     setRightTab('draft')
     try {
-      const result = await api.draft(prompt.trim(), name, instructions.trim() || undefined)
+      const result = await api.draft(effectivePrompt, name, instructions.trim() || undefined)
       setDraft(result)
     } catch (e: any) { setError(e.message) }
     finally { setDraftLoading(false) }
@@ -414,12 +488,12 @@ export default function ProjectDetailPage() {
     const arch = draft.architecture
     if (hasApp) {
       await runWithProgress(
-        () => api.refine(name!, prompt.trim(), comment.trim() || undefined, instructions.trim() || undefined, arch),
+        () => api.refine(name!, prompt.trim(), comment.trim() || undefined, instructions.trim() || undefined, arch, backendType),
         false
       )
     } else {
       await runWithProgress(
-        () => api.generate(prompt.trim(), name, figmaUrl.trim() || undefined, instructions.trim() || undefined, arch),
+        () => api.generate(prompt.trim(), name, figmaUrl.trim() || undefined, instructions.trim() || undefined, arch, backendType),
         false
       )
     }
@@ -430,25 +504,27 @@ export default function ProjectDetailPage() {
     // If only instructions were provided (no prompt), use a generic prompt
     const effectivePrompt = prompt.trim() || (instructions.trim() ? 'Please create this web app using the instructions provided.' : '')
     await runWithProgress(
-      () => api.generate(effectivePrompt, name, figmaUrl.trim() || undefined, instructions.trim() || undefined),
+      () => api.generate(effectivePrompt, name, figmaUrl.trim() || undefined, instructions.trim() || undefined, undefined, backendType),
       !!figmaUrl.trim()
     )
   }
 
   const refine = async () => {
-    if (!prompt.trim() || !name || loading) return
+    if ((!prompt.trim() && !instructions.trim()) || !name || loading) return
+    const effectivePrompt = prompt.trim() || 'Please refine this app using the instructions provided.'
     await runWithProgress(
-      () => api.refine(name, prompt.trim(), comment.trim(), instructions.trim() || undefined),
+      () => api.refine(name, effectivePrompt, comment.trim(), instructions.trim() || undefined, undefined, backendType),
       false
     )
   }
 
   const dockerBuildImage = async () => {
     if (!name) return
-    setDockerBusy('build'); setDockerLog([]); setRightTab('docker')
+    setDockerBusy('build'); setDockerLog([]); setDockerError(null); setRightTab('docker')
     try {
       // Poll progress using project-scoped endpoint
-      const pollTimer = setInterval(async () => {
+      if (dockerPollRef.current) clearInterval(dockerPollRef.current)
+      dockerPollRef.current = setInterval(async () => {
         try {
           const r = await fetch(`/api/generate/progress/project/${name}`)
           if (!r.ok) return
@@ -461,24 +537,60 @@ export default function ProjectDetailPage() {
         } catch {}
       }, 800)
       const result = await api.buildDockerImage(name)
-      clearInterval(pollTimer)
+      if (dockerPollRef.current) { clearInterval(dockerPollRef.current); dockerPollRef.current = null }
       setDocker(result)
       loadDockerStatus()
     } catch (e: any) {
-      setDockerLog(prev => [...prev, `Error: ${e.message}`])
+      const msg = e.message || 'Build failed'
+      const lower = msg.toLowerCase()
+      const isDockerIssue = ['docker not found', 'docker desktop', 'not fully running', 'grpc', 'eof', 'daemon', 'connection refused'].some(k => lower.includes(k))
+      setDockerError(isDockerIssue
+        ? 'Docker Desktop is not running or not fully ready. Please ensure Docker Desktop is started and the whale icon shows "running" in the system tray, then try again.'
+        : `Build failed: ${msg}`)
       loadDockerStatus()
     } finally { setDockerBusy(null) }
   }
 
+  const pollContainerHealth = (url: string) => {
+    if (healthPollRef.current) clearInterval(healthPollRef.current)
+    setContainerReady(false)
+    let attempts = 0
+    // Poll the /api/tables endpoint (guaranteed to exist) instead of root URL
+    // Root URL may return HTML from nginx before the backend API is actually up
+    const healthUrl = url.replace(/\/$/, '') + '/api/tables'
+    healthPollRef.current = setInterval(async () => {
+      attempts++
+      try {
+        const r = await fetch(healthUrl)
+        if (r.ok) {
+          setContainerReady(true)
+          if (healthPollRef.current) { clearInterval(healthPollRef.current); healthPollRef.current = null }
+        }
+      } catch {
+        // Not ready yet — connection refused or network error
+      }
+      if (attempts >= 45) {
+        setContainerReady(true) // stop polling after 90s, let user try manually
+        if (healthPollRef.current) { clearInterval(healthPollRef.current); healthPollRef.current = null }
+      }
+    }, 2000)
+  }
+
   const dockerRunContainer = async () => {
     if (!name) return; setDockerBusy('run')
-    try { setDocker(await api.runDockerContainer(name)) }
+    try {
+      const result = await api.runDockerContainer(name)
+      setDocker(result)
+      if (backendType === 'java' && result.containerUrl) pollContainerHealth(result.containerUrl)
+    }
     catch (e: any) { setDockerLog(prev => [...prev, `Error: ${e.message}`]) }
     finally { setDockerBusy(null) }
   }
 
   const dockerStopContainer = async () => {
     if (!name) return; setDockerBusy('stop')
+    if (healthPollRef.current) { clearInterval(healthPollRef.current); healthPollRef.current = null }
+    setContainerReady(true)
     try { setDocker(await api.stopDockerContainer(name)) }
     catch (e: any) { setDockerLog(prev => [...prev, `Error: ${e.message}`]) }
     finally { setDockerBusy(null) }
@@ -486,7 +598,11 @@ export default function ProjectDetailPage() {
 
   const dockerStartContainer = async () => {
     if (!name) return; setDockerBusy('start')
-    try { setDocker(await api.startDockerContainer(name)) }
+    try {
+      const result = await api.startDockerContainer(name)
+      setDocker(result)
+      if (backendType === 'java' && result.containerUrl) pollContainerHealth(result.containerUrl)
+    }
     catch (e: any) { setDockerLog(prev => [...prev, `Error: ${e.message}`]) }
     finally { setDockerBusy(null) }
   }
@@ -507,6 +623,7 @@ export default function ProjectDetailPage() {
   const canGenerate = (prompt.trim().length > 0 || figmaUrl.trim().length > 0 || instructions.trim().length > 0) && !loading
   const isRunning   = project?.running ?? false
   const hasApp      = project?.hasApp ?? false
+
 
   const _leftPanel = (
     <div className="border-r border-slate-200 flex flex-col h-full overflow-hidden">
@@ -584,26 +701,57 @@ export default function ProjectDetailPage() {
             </div>
           )}
 
+          {/* Backend type selector — locked once app is built */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 whitespace-nowrap">Backend:</span>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden flex-1">
+              <button
+                type="button"
+                onClick={() => !hasApp && setBackend('python')}
+                disabled={loading || hasApp}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  backendType === 'python'
+                    ? 'bg-indigo-600 text-white'
+                    : hasApp ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Python FastAPI
+              </button>
+              <button
+                type="button"
+                onClick={() => !hasApp && setBackend('java')}
+                disabled={loading || hasApp}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  backendType === 'java'
+                    ? 'bg-indigo-600 text-white'
+                    : hasApp ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Java Spring Boot
+              </button>
+            </div>
+          </div>
+
           {/* Action buttons */}
           {hasApp && !figmaUrl.trim() ? (
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
-                <button onClick={refine} disabled={loading || draftLoading || !prompt.trim()}
+                <button onClick={refine} disabled={loading || draftLoading || (!prompt.trim() && !instructions.trim())}
                   className="btn-primary flex-1 justify-center py-2.5">
                   {loading
                     ? <><span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />Updating…</>
-                    : <><Send size={14} />Refine</>}
+                    : <><Send size={14} />Refine App</>}
                 </button>
                 <button onClick={generate} disabled={loading || draftLoading || !canGenerate}
                   className="btn-ghost px-3 py-2.5" title="Regenerate from scratch">
                   <RefreshCw size={14} />
                 </button>
               </div>
-              <button onClick={previewDraft} disabled={loading || draftLoading || !prompt.trim()}
-                className="flex items-center justify-center gap-2 w-full py-2 rounded-lg text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors">
+              <button onClick={previewDraft} disabled={loading || draftLoading || !canDraft}
+                className="flex items-center justify-center gap-2 w-full py-2 rounded-lg text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 {draftLoading
                   ? <><span className="w-3.5 h-3.5 rounded-full border-2 border-indigo-300 border-t-indigo-600 animate-spin" />Drafting…</>
-                  : <><FileText size={13} />{hasApp ? 'Preview Changes' : 'Preview Draft'}</>}
+                  : <><FileText size={13} />{hasApp ? 'Refine Draft' : 'Generate Draft'}</>}
               </button>
             </div>
           ) : (
@@ -617,17 +765,17 @@ export default function ProjectDetailPage() {
                     : <><Send size={14} />Generate App</>}
               </button>
               {!figmaUrl.trim() && (
-                <button onClick={previewDraft} disabled={loading || draftLoading || !prompt.trim()}
-                  className="flex items-center justify-center gap-2 w-full py-2 rounded-lg text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors">
+                <button onClick={previewDraft} disabled={loading || draftLoading || !canDraft}
+                  className="flex items-center justify-center gap-2 w-full py-2 rounded-lg text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                   {draftLoading
                     ? <><span className="w-3.5 h-3.5 rounded-full border-2 border-indigo-300 border-t-indigo-600 animate-spin" />Drafting…</>
-                    : <><FileText size={13} />{hasApp ? 'Preview Changes' : 'Preview Draft'}</>}
+                    : <><FileText size={13} />{hasApp ? 'Refine Draft' : 'Generate Draft'}</>}
                 </button>
               )}
             </div>
           )}
           <p className="text-xs text-slate-600 text-center -mt-2">
-            {hasApp && !figmaUrl.trim() ? 'Refine updates · Preview draft first · ↺ rebuilds' : 'Preview draft before building · Ctrl+Enter to generate'}
+            {hasApp && !figmaUrl.trim() ? 'Refine updates · Generate draft first · ↺ rebuilds' : 'Generate draft before building · Ctrl+Enter to generate'}
           </p>
 
           {/* Error */}
@@ -699,13 +847,14 @@ export default function ProjectDetailPage() {
         {/* Tab bar */}
         <div className="flex border-b border-slate-200 flex-shrink-0">
           {([
-            { id: 'draft',       label: 'Draft',       icon: <FileText size={12} />, badge: draft ? 1 : undefined },
-            { id: 'preview',     label: 'Preview',     icon: <ExternalLink size={12} /> },
-            { id: 'log',         label: 'Build Log',   icon: <Terminal size={12} />, badge: buildLog.length || undefined },
-            { id: 'history',     label: 'History',     icon: <Clock size={12} />, badge: history.length || undefined },
-            { id: 'screenshots', label: 'Screenshots', icon: <Image size={12} />, badge: screenshots.length || undefined },
-            { id: 'docker',      label: 'Docker',      icon: <Container size={12} />, badge: docker?.imageExists ? 1 : undefined },
-          ] as { id: 'preview'|'log'|'history'|'screenshots'|'docker'|'draft'; label: string; icon: React.ReactNode; badge?: number }[]).map(t => (
+            { id: 'draft',        label: 'Draft',        icon: <FileText size={12} />, badge: draft ? 1 : undefined },
+            { id: 'preview',      label: 'Preview',      icon: <ExternalLink size={12} /> },
+            { id: 'architecture', label: 'Architecture', icon: <LayoutGrid size={12} />, badge: architecture ? 1 : undefined },
+            { id: 'log',          label: 'Build Log',    icon: <Terminal size={12} />, badge: buildLog.length || undefined },
+            { id: 'history',      label: 'History',      icon: <Clock size={12} />, badge: history.length || undefined },
+            { id: 'screenshots',  label: 'Screenshots',  icon: <Image size={12} />, badge: screenshots.length || undefined },
+            { id: 'docker',       label: 'Docker',       icon: <Container size={12} />, badge: docker?.imageExists ? 1 : undefined },
+          ] as { id: 'preview'|'log'|'history'|'screenshots'|'docker'|'draft'|'architecture'; label: string; icon: React.ReactNode; badge?: number }[]).map(t => (
             <button key={t.id} onClick={() => setRightTab(t.id)}
               className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
                 rightTab === t.id
@@ -742,32 +891,17 @@ export default function ProjectDetailPage() {
 
           {/* Draft Preview */}
           {rightTab === 'draft' && (
-            <div className="h-full min-h-0 overflow-y-auto p-6">
+            <div className="h-full min-h-0 overflow-hidden flex flex-col">
               {draft ? (
-                <div className="max-w-3xl mx-auto">
-                  <div className="prose prose-sm prose-slate max-w-none
-                    prose-headings:text-slate-800 prose-h1:text-xl prose-h2:text-lg prose-h3:text-base
-                    prose-p:text-slate-600 prose-code:bg-slate-100 prose-code:px-1 prose-code:rounded
-                    prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-pre:text-xs prose-pre:leading-relaxed
-                    prose-table:text-xs prose-th:text-slate-600 prose-td:text-slate-500
-                    prose-strong:text-slate-700">
-                    <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed">
-                      {draft.markdown.split('\n').map((line, i) => {
-                        if (line.startsWith('# ')) return <h1 key={i} className="text-xl font-bold text-slate-800 mb-4 mt-6 font-sans">{line.slice(2)}</h1>
-                        if (line.startsWith('## ')) return <h2 key={i} className="text-lg font-semibold text-slate-700 mb-3 mt-5 font-sans border-b pb-1">{line.slice(3)}</h2>
-                        if (line.startsWith('### ')) return <h3 key={i} className="text-base font-semibold text-slate-700 mb-2 mt-4 font-sans">{line.slice(4)}</h3>
-                        if (line.startsWith('---')) return <hr key={i} className="my-4 border-slate-200" />
-                        if (line.startsWith('```')) return null
-                        if (line.startsWith('| ')) return <div key={i} className="text-xs text-slate-600 font-mono">{line}</div>
-                        if (line.startsWith('- ')) return <div key={i} className="text-sm text-slate-600 ml-4">• {line.slice(2)}</div>
-                        if (line.startsWith('**') && line.endsWith('**')) return <div key={i} className="text-sm font-semibold text-slate-700">{line.replace(/\*\*/g, '')}</div>
-                        if (line.startsWith('**')) return <div key={i} className="text-sm text-slate-600"><span className="font-semibold text-slate-700">{line.split('**')[1]}</span>{line.split('**').slice(2).join('')}</div>
-                        if (line.match(/^[┌│├└─┬┼┴┐┤┘]/)) return <div key={i} className="text-slate-500">{line}</div>
-                        return <div key={i} className="text-slate-600">{line || ' '}</div>
-                      })}
-                    </div>
+                <>
+                  <div className="flex-1 min-h-0">
+                    <iframe
+                      srcDoc={draftToHtml(draft)}
+                      className="w-full h-full border-0"
+                      title="Draft Preview"
+                    />
                   </div>
-                  <div className="sticky bottom-0 bg-white border-t border-slate-200 py-4 mt-6 flex gap-3 justify-center">
+                  <div className="flex-shrink-0 bg-white border-t border-slate-200 py-3 flex gap-3 justify-center">
                     <button onClick={buildFromDraft}
                       className="px-6 py-2.5 rounded-lg text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm">
                       ✓ Looks Good — Build It
@@ -777,25 +911,38 @@ export default function ProjectDetailPage() {
                       ✎ Revise
                     </button>
                   </div>
-                </div>
+                </>
               ) : draftLoading ? (
-                <div className="text-center text-slate-500 mt-20">
-                  <span className="inline-block w-8 h-8 rounded-full border-3 border-indigo-200 border-t-indigo-600 animate-spin mb-3" />
-                  <p className="text-sm font-medium text-indigo-700">Generating draft wireframe…</p>
-                  <p className="text-xs text-slate-400 mt-1">Running the UX Architect agent (~5-10s)</p>
-                </div>
+                <DraftProgress />
               ) : (
                 <div className="text-center text-slate-500 mt-20">
                   <FileText size={40} className="mx-auto mb-3 text-slate-300" />
                   <p className="text-sm">No draft yet.</p>
-                  <p className="text-xs text-slate-400 mt-1">Click "Preview Draft" to see a wireframe before building.</p>
+                  <p className="text-xs text-slate-400 mt-1">Click “Generate Draft” to see a wireframe before building.</p>
                 </div>
               )}
             </div>
           )}
 
           {/* Preview */}
-          {rightTab === 'preview' && <PreviewFrame url={previewUrl} loading={loading} step={step} />}
+          {rightTab === 'preview' && <PreviewFrame url={previewUrl} loading={loading} step={step} hasApp={hasApp} />}
+
+          {/* Architecture */}
+          {rightTab === 'architecture' && (
+            <div className="h-full min-h-0 overflow-hidden">
+              {architecture ? (
+                <iframe
+                  src={api.getArchitectureHtmlUrl(name!)}
+                  className="w-full h-full border-0"
+                  title="Architecture"
+                />
+              ) : (
+                <div className="p-6">
+                  <p className="text-slate-600 italic text-xs">No architecture document yet — generate or refine the app to create one.</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Build Log — persisted runs oldest→newest, live run appended at bottom */}
           {rightTab === 'log' && (
@@ -961,6 +1108,20 @@ export default function ProjectDetailPage() {
                 </div>
               )}
 
+              {/* Build error */}
+              {dockerError && (
+                <div className="card p-4 border-red-200 bg-red-50 flex gap-3">
+                  <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-red-700">Build Failed</p>
+                    <p className="text-xs text-red-600 mt-1 break-words">{dockerError}</p>
+                  </div>
+                  <button onClick={() => setDockerError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0">
+                    <span className="text-lg leading-none">&times;</span>
+                  </button>
+                </div>
+              )}
+
               {/* Image section */}
               <div className="card p-5 space-y-4">
                 <div className="flex items-center justify-between">
@@ -993,6 +1154,17 @@ export default function ProjectDetailPage() {
                       : <><RefreshCw size={12} />{docker?.imageExists ? 'Rebuild Image' : 'Build Image'}</>}
                   </button>
 
+                  {/* Run Container — only when image exists but no container */}
+                  {docker?.imageExists && docker.containerStatus === 'none' && (
+                    <button onClick={dockerRunContainer}
+                      disabled={!!dockerBusy}
+                      className="btn-success text-xs px-3 py-2">
+                      {dockerBusy === 'run'
+                        ? <><span className="w-3 h-3 rounded-full border border-emerald-400 border-t-transparent animate-spin" />Starting…</>
+                        : <><Play size={12} />Run Container</>}
+                    </button>
+                  )}
+
                   {/* Download */}
                   <button
                     onClick={dockerDownload}
@@ -1016,18 +1188,15 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
 
-              {/* Container section */}
-              {docker?.imageExists && (
+              {/* Container section — only when a container exists */}
+              {docker?.imageExists && docker.containerStatus !== 'none' && (
                 <div className="card p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
                         <Layers size={14} className="text-violet-400" /> Container
                       </h3>
-                      {docker.containerStatus !== 'none'
-                        ? <p className="text-xs font-mono text-slate-500 mt-1">{docker.containerName}</p>
-                        : <p className="text-xs text-slate-600 mt-1">No container running</p>
-                      }
+                      <p className="text-xs font-mono text-slate-500 mt-1">{docker.containerName}</p>
                     </div>
                     {docker.containerStatus === 'running' && (
                       <span className="badge-running text-xs"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Running</span>
@@ -1037,21 +1206,28 @@ export default function ProjectDetailPage() {
                     )}
                   </div>
 
-                  {docker.containerUrl && (
-                    <a href={docker.containerUrl} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800">
-                      <ExternalLink size={11} />{docker.containerUrl}
-                    </a>
+                  {docker.containerUrl && docker.containerStatus === 'running' && (
+                    containerReady ? (
+                      <a href={docker.containerUrl} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800">
+                        <ExternalLink size={11} />{docker.containerUrl}
+                      </a>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-md">
+                        <span className="w-3 h-3 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                        <span>Starting up — waiting for app to be ready...</span>
+                      </div>
+                    )
                   )}
 
                   <div className="flex gap-2 flex-wrap">
-                    {docker.containerStatus === 'none' || docker.containerStatus === 'exited' ? (
-                      <button onClick={docker.containerStatus === 'exited' ? dockerStartContainer : dockerRunContainer}
+                    {docker.containerStatus === 'exited' ? (
+                      <button onClick={dockerStartContainer}
                         disabled={!!dockerBusy}
                         className="btn-success text-xs px-3 py-2">
-                        {(dockerBusy === 'run' || dockerBusy === 'start')
+                        {dockerBusy === 'start'
                           ? <><span className="w-3 h-3 rounded-full border border-emerald-400 border-t-transparent animate-spin" />Starting…</>
-                          : <><Play size={12} />{docker.containerStatus === 'exited' ? 'Start Container' : 'Run Container'}</>}
+                          : <><Play size={12} />Start Container</>}
                       </button>
                     ) : (
                       <button onClick={dockerStopContainer} disabled={!!dockerBusy}
@@ -1062,14 +1238,12 @@ export default function ProjectDetailPage() {
                       </button>
                     )}
 
-                    {docker.containerStatus !== 'none' && (
-                      <button onClick={dockerDeleteContainer} disabled={!!dockerBusy}
-                        className="btn-danger text-xs px-3 py-2">
-                        {dockerBusy === 'delete'
-                          ? <><span className="w-3 h-3 rounded-full border border-red-400 border-t-transparent animate-spin" />Removing…</>
-                          : <><Trash2 size={12} />Remove Container</>}
-                      </button>
-                    )}
+                    <button onClick={dockerDeleteContainer} disabled={!!dockerBusy}
+                      className="btn-danger text-xs px-3 py-2">
+                      {dockerBusy === 'delete'
+                        ? <><span className="w-3 h-3 rounded-full border border-red-400 border-t-transparent animate-spin" />Removing…</>
+                        : <><Trash2 size={12} />Remove Container</>}
+                    </button>
 
                     {docker.hostPort && (
                       <span className="flex items-center text-xs text-slate-600 ml-auto">

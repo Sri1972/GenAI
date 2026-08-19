@@ -31,11 +31,11 @@ export const api = {
   getDraft: (projectName: string) =>
     request<DraftResult | null>(`/api/projects/${projectName}/draft`),
 
-  generate: (prompt: string, projectName?: string, figmaUrl?: string, instructions?: string, architecture?: Record<string, any>) =>
+  generate: (prompt: string, projectName?: string, figmaUrl?: string, instructions?: string, architecture?: Record<string, any>, backendType?: string) =>
     request<GenerateResult>('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, project_name: projectName, figma_url: figmaUrl || null, instructions: instructions || '', architecture: architecture || null }),
+      body: JSON.stringify({ prompt, project_name: projectName, figma_url: figmaUrl || null, instructions: instructions || '', architecture: architecture || null, backend_type: backendType || 'python' }),
     }),
 
   createProject: (name: string) =>
@@ -75,11 +75,11 @@ export const api = {
   getProgress: (requestId: string) =>
     request<{ log: string[] }>(`/api/generate/progress/${requestId}`),
 
-  refine: (projectName: string, prompt: string, comment?: string, instructions?: string, architecture?: Record<string, any>) =>
+  refine: (projectName: string, prompt: string, comment?: string, instructions?: string, architecture?: Record<string, any>, backendType?: string) =>
     request<GenerateResult>(`/api/refine/${projectName}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, project_name: projectName, comment: comment || '', instructions: instructions || '', architecture: architecture || null }),
+      body: JSON.stringify({ prompt, project_name: projectName, comment: comment || '', instructions: instructions || '', architecture: architecture || null, backend_type: backendType || 'python' }),
     }),
 
   getHistory: (name: string) =>
@@ -92,6 +92,11 @@ export const api = {
 
   getBuildLog: (name: string) =>
     request<{ runs: BuildLogRun[] }>(`/api/projects/${name}/buildlog`),
+
+  getArchitecture: (name: string) =>
+    request<{ markdown: string; exists: boolean }>(`/api/projects/${name}/architecture`),
+
+  getArchitectureHtmlUrl: (name: string) => `/api/projects/${name}/architecture.html`,
 
   // ── Figma Wireframe ────────────────────────────────────────────────────────
 

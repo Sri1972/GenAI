@@ -1,4 +1,4 @@
-import { ExternalLink, RefreshCw, Zap } from 'lucide-react'
+import { ExternalLink, RefreshCw, Square, Zap } from 'lucide-react'
 import { useRef } from 'react'
 import { GenerateStep } from '../types'
 
@@ -15,9 +15,9 @@ const STEP_MESSAGES: Record<string, string> = {
   qa: 'Running quality checks…',
 }
 
-interface Props { url: string | null; loading?: boolean; step?: GenerateStep }
+interface Props { url: string | null; loading?: boolean; step?: GenerateStep; hasApp?: boolean }
 
-export default function PreviewFrame({ url, loading, step }: Props) {
+export default function PreviewFrame({ url, loading, step, hasApp }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   const reload = () => {
@@ -54,23 +54,31 @@ export default function PreviewFrame({ url, loading, step }: Props) {
           <iframe ref={iframeRef} src={url} className="absolute inset-0 w-full h-full border-none" title="App Preview" />
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-5 text-center px-8">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center">
-              <Zap size={28} className="text-slate-400" />
-            </div>
-            <div>
-              <div className="text-slate-600 font-semibold mb-1">No app loaded</div>
-              <div className="text-slate-500 text-sm leading-relaxed max-w-xs">
-                Generate a new app from the <span className="text-indigo-600">Generate</span> page,
-                or start an existing one from <span className="text-indigo-600">Projects</span>.
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 mt-2">
-              {['React + TypeScript + Tailwind','React Router navigation','Recharts data visualisation','Vite hot-reload dev server'].map(f => (
-                <div key={f} className="flex items-center gap-2 text-xs text-slate-600">
-                  <span className="text-emerald-600">✓</span>{f}
+            {hasApp ? (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center">
+                  <Square size={28} className="text-slate-400" />
                 </div>
-              ))}
-            </div>
+                <div>
+                  <div className="text-slate-600 font-semibold mb-1">App is not running</div>
+                  <div className="text-slate-500 text-sm leading-relaxed max-w-xs">
+                    Click the <span className="text-emerald-600 font-medium">▶ Start</span> button in the sidebar to launch this app.
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center">
+                  <Zap size={28} className="text-slate-400" />
+                </div>
+                <div>
+                  <div className="text-slate-600 font-semibold mb-1">No app generated yet</div>
+                  <div className="text-slate-500 text-sm leading-relaxed max-w-xs">
+                    Describe your app and click <span className="text-indigo-600 font-medium">Generate App</span> to build it.
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
         {loading && (
