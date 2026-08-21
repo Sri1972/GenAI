@@ -17,6 +17,150 @@ export interface DraftResult {
   pageCount: number
 }
 
+// ── Unified workspace "Project" (new model) ───────────────────────────────────
+export interface WorkspaceInput { name: string; size: number }
+export interface WorkspaceWebapp { appId: string; key: string; previewUrl: string }
+export type EngagementMode = 'collaborate' | 'autopilot'
+export interface WorkspaceProject {
+  slug: string
+  name: string
+  description: string
+  defaultMode: EngagementMode
+  created: string
+  updated: string
+  webapps: string[]
+  inputs: WorkspaceInput[]
+}
+
+export const workspaces = {
+  list: () => request<WorkspaceProject[]>('/api/workspaces'),
+
+  create: (name: string, description = '') =>
+    request<WorkspaceProject>('/api/workspaces', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+    }),
+
+  get: (slug: string) => request<WorkspaceProject>(`/api/workspaces/${slug}`),
+
+  setDefaultMode: (slug: string, mode: EngagementMode) =>
+    request<WorkspaceProject>(`/api/workspaces/${slug}/default-mode`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }),
+    }),
+
+  remove: (slug: string) =>
+    request<{ status: string; slug: string }>(`/api/workspaces/${slug}`, { method: 'DELETE' }),
+
+  listInputs: (slug: string) => request<WorkspaceInput[]>(`/api/workspaces/${slug}/inputs`),
+
+  uploadInput: (slug: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<WorkspaceInput>(`/api/workspaces/${slug}/inputs`, { method: 'POST', body: form })
+  },
+
+  deleteInput: (slug: string, filename: string) =>
+    request<{ status: string; name: string }>(
+      `/api/workspaces/${slug}/inputs/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+
+  listWebapps: (slug: string) => request<WorkspaceWebapp[]>(`/api/workspaces/${slug}/webapps`),
+
+  createWebapp: (slug: string) =>
+    request<WorkspaceWebapp>(`/api/workspaces/${slug}/webapps`, { method: 'POST' }),
+
+  renameWebapp: (slug: string, appId: string, newName: string) =>
+    request<WorkspaceWebapp>(`/api/workspaces/${slug}/webapps/${encodeURIComponent(appId)}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_name: newName }),
+    }),
+
+  deleteWebapp: (slug: string, appId: string) =>
+    request<{ status: string; appId: string }>(
+      `/api/workspaces/${slug}/webapps/${encodeURIComponent(appId)}`, { method: 'DELETE' }),
+}
+
+// ── Brainstorming roundtable ──────────────────────────────────────────────────
+export interface RoundtablePersona { id: string; name: string; role: string; hue: number; knows: string }
+
+export interface AgendaTemplate { id: string; name: string; buckets: string[]; people: string[]; duration: number }
+
+export interface CreateMeetingBody {
+  topic: string
+  people: string[]
+  duration_minutes?: number
+  turn_order?: 'open' | 'round'
+  diagram?: boolean
+  provider?: string | null
+  mode?: EngagementMode
+  agenda?: string[]
+  architecture?: 'classic' | 'debate'
+}
+
+export interface MeetingSummary { id: string; topic: string; people: string[]; turns: number; complete: boolean; when: number }
+export interface MeetingTurn { who: string; text: string; why?: string; at?: string; note?: string; sources?: string[]; quote?: string; quoteRole?: string }
+export interface RecapSection { bucket: string; items: string[] }
+export interface MeetingRecap { headline: string; decision?: string; argument?: string; sections?: RecapSection[]; commitments: { who: string; what: string }[]; still_open: string[] }
+export interface MeetingUsage {
+  by_person: { who: string; name: string; model: string; input_tokens: number; output_tokens: number; cache_read_tokens: number; cost_usd: number; turns: number }[]
+  by_model: { model: string; input_tokens: number; output_tokens: number; cache_read_tokens: number; cost_usd: number }[]
+  facilitator: { input_tokens: number; output_tokens: number; cost_usd: number }
+  totals: { input_tokens: number; output_tokens: number; cache_read_tokens: number; cost_usd: number }
+}
+export interface MeetingDetail {
+  id: string; complete: boolean; topic: string; people: string[]
+  turns: MeetingTurn[]; agreed: { text: string; type: string; who: string; at: string }[]; recap: MeetingRecap | null
+  usage?: MeetingUsage | null
+}
+
+export const roundtable = {
+  personas: () => request<RoundtablePersona[]>('/api/roundtable/personas'),
+
+  agendaTemplates: () => request<AgendaTemplate[]>('/api/roundtable/agenda-templates'),
+
+  meetings: (project: string) => request<MeetingSummary[]>(`/api/roundtable/${project}/meetings`),
+
+  meeting: (project: string, mid: string) =>
+    request<MeetingDetail>(`/api/roundtable/${project}/meetings/${encodeURIComponent(mid)}`),
+
+  createMeeting: (project: string, body: CreateMeetingBody) =>
+    request<{ meetingId: string; topic: string; people: string[] }>(
+      `/api/roundtable/${project}/meetings`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }),
+
+  interject: (project: string, mid: string, text: string, target = 'all') =>
+    request<{ status: string }>(`/api/roundtable/${project}/meetings/${mid}/interject`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, target }),
+    }),
+
+  hold: (project: string, mid: string, paused: boolean) =>
+    request<{ status: string }>(`/api/roundtable/${project}/meetings/${mid}/hold`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paused }),
+    }),
+
+  wrapUp: (project: string, mid: string) =>
+    request<{ status: string }>(`/api/roundtable/${project}/meetings/${mid}/wrap_up`, { method: 'POST' }),
+
+  continue: (project: string, mid: string) =>
+    request<{ status: string }>(`/api/roundtable/${project}/meetings/${mid}/continue`, { method: 'POST' }),
+
+  artifactUrl: (project: string, mid: string, name: string) =>
+    `/api/roundtable/${project}/meetings/${mid}/artifact/${encodeURIComponent(name)}`,
+
+  drawDiagram: (project: string, mid: string) =>
+    request<{ file: string | null; url?: string; detail: string }>(
+      `/api/roundtable/${project}/meetings/${mid}/diagram`, { method: 'POST' }),
+
+  promote: (project: string, mid: string, name: string) =>
+    request<{ status: string; artifact: string }>(
+      `/api/roundtable/${project}/meetings/${mid}/artifact/${encodeURIComponent(name)}/promote`,
+      { method: 'POST' }),
+}
+
 export const api = {
   listProjects: () =>
     request<Project[]>('/api/projects'),

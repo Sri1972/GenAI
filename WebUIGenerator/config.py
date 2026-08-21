@@ -57,11 +57,13 @@ RELAY_URL    = os.environ.get("TURBOUI_RELAY_URL", f"ws://{MCP_HOST}:{MCP_PORT}/
 # ── Generated folder structure ────────────────────────────────────────────────
 
 GENERATED_ROOT   = Path(__file__).parent / "generated"
-WEB_APPS_DIR     = GENERATED_ROOT / "web-apps"      # React/Vite + HTML projects
+WEB_APPS_DIR     = GENERATED_ROOT / "web-apps"      # LEGACY flat store — React/Vite + HTML projects
 FIGMA_MOCKUPS_DIR = GENERATED_ROOT / "figma-mockups" # Figma wireframe screenshots/exports
+PROJECTS_DIR     = GENERATED_ROOT / "projects"      # Unified per-project workspaces (new model)
 
-# Only create the directory this sub-project actually uses
+# Only create the directories this sub-project actually uses
 WEB_APPS_DIR.mkdir(parents=True, exist_ok=True)
+PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Registry files live in the generated root (not in sub-folders)
 REGISTRY_FILE   = GENERATED_ROOT / "projects-web-apps.json"

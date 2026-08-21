@@ -29,7 +29,44 @@ from config import (
     GENERATED_ROOT,
 )
 
-NODE_PATH = r"C:\Program Files\nodejs"
+import platform
+
+_WIN_NODE_PATH = r"C:\Program Files\nodejs"
+
+
+def _resolve_node_dir() -> str:
+    """Directory containing the node executable, resolved per-OS.
+    Windows: the bundled install dir if it exists, else the dir of node on PATH.
+    Posix:   the dir of `node` on PATH (via shutil.which)."""
+    if os.name == "nt":
+        if Path(_WIN_NODE_PATH).exists():
+            return _WIN_NODE_PATH
+        found = shutil.which("node")
+        return str(Path(found).parent) if found else _WIN_NODE_PATH
+    found = shutil.which("node")
+    return str(Path(found).parent) if found else ""
+
+
+NODE_PATH = _resolve_node_dir()
+
+
+def node_exe() -> str:
+    """Absolute path / command for the node executable, per-OS."""
+    if os.name == "nt":
+        return str(Path(NODE_PATH) / "node.exe")
+    return shutil.which("node") or "node"
+
+
+def npm_cli() -> list[str]:
+    """Command prefix that runs npm, per-OS.
+    Windows: [node.exe, .../npm-cli.js]  (bundled npm ships as a JS entrypoint).
+    Posix:   [npm]  (the npm wrapper resolved on PATH)."""
+    if os.name == "nt":
+        npm_js = Path(NODE_PATH) / "node_modules" / "npm" / "bin" / "npm-cli.js"
+        return [str(Path(NODE_PATH) / "node.exe"), str(npm_js)]
+    return [shutil.which("npm") or "npm"]
+
+
 DEPLOYMENT = _llm_model_id()  # for compatibility — shows model in health endpoint
 
 # Web apps (React/Vite + HTML) go into generated/web-apps/
@@ -205,11 +242,9 @@ def _npm_install(project_dir: Path) -> tuple[bool, str]:
         pj.write_text(txt, encoding="utf-8")
 
     env = os.environ.copy()
-    env["PATH"] = NODE_PATH + ";" + env.get("PATH", "")
-    node_exe = Path(NODE_PATH) / "node.exe"
-    npm_js   = Path(NODE_PATH) / "node_modules" / "npm" / "bin" / "npm-cli.js"
+    env["PATH"] = NODE_PATH + os.pathsep + env.get("PATH", "")
     result = subprocess.run(
-        [str(node_exe), str(npm_js), "install"],
+        npm_cli() + ["install"],
         cwd=str(project_dir),
         env=env,
         capture_output=True,
@@ -322,14 +357,12 @@ def _ensure_shared_nm() -> tuple[bool, str]:
         pj.write_text(current_pj, encoding="utf-8")
 
     env = os.environ.copy()
-    env["PATH"] = NODE_PATH + ";" + env.get("PATH", "")
-    node_exe = Path(NODE_PATH) / "node.exe"
-    npm_js   = Path(NODE_PATH) / "node_modules" / "npm" / "bin" / "npm-cli.js"
+    env["PATH"] = NODE_PATH + os.pathsep + env.get("PATH", "")
 
     # Run npm install only if base packages are missing
     if not nm.exists() or not (nm / "vite").exists() or not (nm / "react").exists():
         r = subprocess.run(
-            [str(node_exe), str(npm_js), "install"],
+            npm_cli() + ["install"],
             cwd=str(SHARED_NM_DIR), env=env, capture_output=True, text=True, timeout=300,
         )
         if r.returncode != 0:
@@ -343,7 +376,7 @@ def _ensure_shared_nm() -> tuple[bool, str]:
     extra = [p for p in _EXTRA_PACKAGES if not _pkg_dir(p).exists()]
     if extra:
         subprocess.run(
-            [str(node_exe), str(npm_js), "install", "--save-optional"] + extra,
+            npm_cli() + ["install", "--save-optional"] + extra,
             cwd=str(SHARED_NM_DIR), env=env, capture_output=True, text=True, timeout=120,
         )
 
@@ -384,10 +417,8 @@ def _link_shared_nm(
             progress(f"Installing new packages into shared store: {', '.join(missing)}")
         env = os.environ.copy()
         env["PATH"] = NODE_PATH + os.pathsep + env.get("PATH", "")
-        node_exe = Path(NODE_PATH) / "node.exe"
-        npm_js   = Path(NODE_PATH) / "node_modules" / "npm" / "bin" / "npm-cli.js"
         r = subprocess.run(
-            [str(node_exe), str(npm_js), "install"] + missing,
+            npm_cli() + ["install"] + missing,
             cwd=str(SHARED_NM_DIR), env=env, capture_output=True, text=True, timeout=120,
         )
         if r.returncode != 0:
@@ -536,7 +567,6 @@ def _start_vite(project_dir: Path, port: int) -> subprocess.Popen:
     if _vite_cache.exists():
         shutil.rmtree(_vite_cache, ignore_errors=True)
 
-    node_exe = Path(NODE_PATH) / "node.exe"
     vite_js = Path(_SHARED_NM_JUNCTION) / "vite" / "bin" / "vite.js"
     if not vite_js.exists():
         vite_js = project_dir / "node_modules" / "vite" / "bin" / "vite.js"
@@ -554,7 +584,11 @@ def _start_vite(project_dir: Path, port: int) -> subprocess.Popen:
     if os.name == "nt":
         # DETACHED_PROCESS makes the server survive TurboUIGen restarts
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    return subprocess.Popen([str(node_exe), str(vite_js), "--port", str(port), "--host", "0.0.0.0"], **kwargs)
+    else:
+        # start_new_session detaches into its own session/process group so the
+        # dev server survives a TurboUIGen restart on posix.
+        kwargs["start_new_session"] = True
+    return subprocess.Popen([node_exe(), str(vite_js), "--port", str(port), "--host", "0.0.0.0"], **kwargs)
 
 
 def _start_api_server(project_dir: Path, api_port: int = 8080) -> subprocess.Popen | None:
@@ -603,7 +637,10 @@ def _start_api_server(project_dir: Path, api_port: int = 8080) -> subprocess.Pop
     if os.name == "nt":
         # DETACHED_PROCESS makes the server survive TurboUIGen restarts
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    proc = subprocess.Popen(["python", str(server_file)], **kwargs)
+    else:
+        # start_new_session detaches the server so it survives a TurboUIGen restart on posix.
+        kwargs["start_new_session"] = True
+    proc = subprocess.Popen([_sys.executable, str(server_file)], **kwargs)
     print(f"[api_server] Started Python API server on port {api_port} (PID {proc.pid}, cwd={cwd})", flush=True)
     return proc
 
@@ -654,6 +691,9 @@ def _start_java_api_server(project_dir: Path, api_port: int = 8080) -> subproces
         # CREATE_NO_WINDOW prevents a visible CMD prompt for .cmd batch files
         # while CREATE_NEW_PROCESS_GROUP allows independent termination
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    else:
+        # start_new_session detaches the server so it survives a TurboUIGen restart on posix.
+        kwargs["start_new_session"] = True
 
     # Prefer system mvn over mvnw (avoids download issues)
     mvn_cmd = None
@@ -669,6 +709,30 @@ def _start_java_api_server(project_dir: Path, api_port: int = 8080) -> subproces
     proc = subprocess.Popen(cmd, **kwargs)
     print(f"[api_server] Started Java Spring Boot server on port {api_port} (PID {proc.pid}, JAVA_HOME={java_home})", flush=True)
     return proc
+
+
+def _kill_port(port: int):
+    """Kill whatever process is LISTENING on `port`, per-OS. Best-effort — never raises."""
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                f'for /f "tokens=5" %a in (\'netstat -ano ^| findstr "LISTENING" ^| findstr ":{port} "\') do taskkill /PID %a /F',
+                shell=True, capture_output=True, timeout=5,
+            )
+        except Exception:
+            pass
+    else:
+        # lsof -ti lists PIDs bound to the port; empty output means nothing to kill.
+        try:
+            out = subprocess.run(
+                ["lsof", "-ti", f"tcp:{port}"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout
+            pids = [p for p in out.split() if p]
+            if pids:
+                subprocess.run(["kill", "-9", *pids], capture_output=True, timeout=5)
+        except Exception:
+            pass
 
 
 def _stop_api_server(project_name: str):
@@ -687,13 +751,7 @@ def _stop_api_server(project_name: str):
     # Kill any python process on this project's API port
     api_port = _api_ports.get(project_name)
     if api_port:
-        try:
-            subprocess.run(
-                f'for /f "tokens=5" %a in (\'netstat -ano ^| findstr "LISTENING" ^| findstr ":{api_port} "\') do taskkill /PID %a /F',
-                shell=True, capture_output=True, timeout=5,
-            )
-        except Exception:
-            pass
+        _kill_port(api_port)
 
 
 def _make_junction(link: Path, target: Path):
@@ -1459,8 +1517,7 @@ def _tsc_heal(project_dir: Path, files: dict, progress=None) -> dict:
             fp.write_text(content, encoding="utf-8")
 
         # Run tsc — on Windows use .cmd wrapper
-        import platform as _platform
-        if _platform.system() == "Windows":
+        if platform.system() == "Windows":
             tsc_bin = project_dir / "node_modules" / ".bin" / "tsc.cmd"
         else:
             tsc_bin = project_dir / "node_modules" / ".bin" / "tsc"
@@ -1474,7 +1531,7 @@ def _tsc_heal(project_dir: Path, files: dict, progress=None) -> dict:
             capture_output=True,
             text=True,
             timeout=60,
-            shell=(_platform.system() == "Windows"),
+            shell=(platform.system() == "Windows"),
         )
         if result.returncode == 0:
             print(f"[tsc_heal] Clean after round {round_n}", flush=True)
@@ -1730,14 +1787,7 @@ def kill_server(project_name: str, forget_port: bool = False):
     # not uvicorn's ESTABLISHED proxy connections to Vite (which would kill the API server).
     port = _dev_ports.get(project_name)
     if port:
-        try:
-            import subprocess
-            subprocess.run(
-                f'for /f "tokens=5" %a in (\'netstat -ano ^| findstr "LISTENING" ^| findstr ":{port} "\') do taskkill /PID %a /F',
-                shell=True, capture_output=True, timeout=5,
-            )
-        except Exception:
-            pass
+        _kill_port(port)
     if forget_port:
         _dev_ports.pop(project_name, None)
         _save_ports()
@@ -1951,10 +2001,8 @@ def generate_project(prompt: str, progress=None, project_name_override: str | No
             print(f"[generate] Missing modules detected after link: {_missing_final}", flush=True)
             env = os.environ.copy()
             env["PATH"] = NODE_PATH + os.pathsep + env.get("PATH", "")
-            node_exe = Path(NODE_PATH) / "node.exe"
-            npm_js = Path(NODE_PATH) / "node_modules" / "npm" / "bin" / "npm-cli.js"
             subprocess.run(
-                [str(node_exe), str(npm_js), "install"] + _missing_final,
+                npm_cli() + ["install"] + _missing_final,
                 cwd=str(SHARED_NM_DIR), env=env, capture_output=True, text=True, timeout=120,
             )
             print(f"[generate] Installed missing modules: {_missing_final}", flush=True)
@@ -2287,6 +2335,12 @@ def list_projects() -> list[dict]:
     """
     from agents.figma_to_web_using_playwright_agent import _html_servers, _html_ports
     reg = _load_registry()
+    if not reg:
+        return []
+
+    # Project-scoped web-apps use composite keys "<project>--<app-id>" and belong to the
+    # unified project workspace, not the legacy flat sidebar. Keep them out of this list.
+    reg = {name: entry for name, entry in reg.items() if "--" not in name}
     if not reg:
         return []
 

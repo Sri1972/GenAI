@@ -1,15 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { Route, Routes, useNavigate } from 'react-router-dom'
+import { Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import FigmaSidebar from './components/FigmaSidebar'
 import CollapsibleSidebar from './components/CollapsibleSidebar'
 import Header, { Tab } from './components/Header'
-import ProjectDetailPage from './pages/ProjectDetailPage'
 import FigmaMockupPage from './pages/FigmaMockupPage'
 import SandpackPreviewPage from './pages/SandpackPreviewPage'
+import AgentChatPage from './pages/AgentChatPage'
+import HomePage from './pages/HomePage'
+import ProjectWorkspacePage from './pages/ProjectWorkspacePage'
 import { api } from './hooks/useApi'
 import { FigmaProject, GenerateResult, GenerateStep, Project } from './types'
-import { Layers, Zap } from 'lucide-react'
+import { Layers, Zap, Sparkles } from 'lucide-react'
 
 // ── Per-project generation state ──────────────────────────────────────────────
 export interface GenState {
@@ -67,6 +69,13 @@ export const FigmaProjectsContext = createContext<FigmaProjectsCtx>({
 })
 export const useFigmaProjectsCtx = () => useContext(FigmaProjectsContext)
 
+// Remount the conversational page per project so chat + preview state never leak
+// across projects (useAgentStream keeps its own per-mount state).
+function ChatRoute() {
+  const { name } = useParams()
+  return <AgentChatPage key={name ?? '__new__'} />
+}
+
 // ── Empty state for webapp tab ─────────────────────────────────────────────────
 function WebAppEmptyState({ onSwitch }: { onSwitch: () => void }) {
   const navigate = useNavigate()
@@ -82,13 +91,13 @@ function WebAppEmptyState({ onSwitch }: { onSwitch: () => void }) {
         </div>
       </div>
       <div className="flex gap-3 mt-2">
+        <button onClick={() => navigate('/chat')}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-700 transition-colors shadow-sm">
+          <Sparkles size={13} /> Chat to Build (SDK) · New
+        </button>
         <button onClick={onSwitch}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-50 border border-violet-200 text-violet-700 text-xs font-medium hover:bg-violet-100 transition-colors">
           <Layers size={13} /> Build Figma Mockup
-        </button>
-        <button onClick={() => navigate('/')}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium hover:bg-slate-100 transition-colors">
-          <Zap size={13} /> Select a Project
         </button>
       </div>
       <div className="flex flex-col gap-1.5 mt-2">
@@ -181,7 +190,11 @@ export default function App() {
           {/* Standalone sandbox preview — no header/sidebar, shareable URL */}
           <Route path="/sandbox/:name" element={<SandpackPreviewPage />} />
 
-          {/* Main app shell */}
+          {/* New unified workspace: homepage + per-project shell */}
+          <Route path="/" element={<HomePage />} />
+          <Route path="/p/:project" element={<ProjectWorkspacePage />} />
+
+          {/* Legacy flat web-app workspace (pre-projects) — kept reachable at /legacy/* */}
           <Route path="*" element={
             <div className="flex flex-col h-screen overflow-hidden bg-white">
 
@@ -210,7 +223,11 @@ export default function App() {
                       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                         <Routes>
                           <Route path="/"             element={<WebAppEmptyState onSwitch={() => setActiveTab('mockup')} />} />
-                          <Route path="/project/:name" element={<ProjectDetailPage />} />
+                          <Route path="/legacy"       element={<WebAppEmptyState onSwitch={() => setActiveTab('mockup')} />} />
+                          {/* Legacy project route now opens the conversational builder too */}
+                          <Route path="/project/:name" element={<ChatRoute />} />
+                          <Route path="/chat"          element={<ChatRoute />} />
+                          <Route path="/chat/:name"    element={<ChatRoute />} />
                         </Routes>
                       </div>
                     )

@@ -47,3 +47,10 @@ desktop.ini
 
 # Build artifacts
 *.zip
+
+# Local test datasets (large; regenerate/download as needed)
+/car_prices.csv
+/car_prices_sample.csv
+
+# Generated project workspaces — transcripts, uploads, built webapps (ephemeral)
+WebUIGenerator/generated/projects/

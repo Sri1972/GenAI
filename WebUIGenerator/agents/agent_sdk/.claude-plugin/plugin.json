@@ -1,0 +1,8 @@
+{
+  "name": "turbo-uigen",
+  "description": "TurboUIGen web-app builder skills: D3 charts/maps, exports, AI chat, and the SQLite+FastAPI backend contract.",
+  "version": "1.0.0",
+  "author": {
+    "name": "TurboUIGen"
+  }
+}

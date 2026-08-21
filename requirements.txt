@@ -28,3 +28,5 @@ pyyaml>=6.0.1
 
 # AWS relay (optional — only needed for Bedrock-based LLM routing)
 # boto3>=1.34.0
+
+duckdb>=1.0  # in-process dataset MCP tools (dataset_mcp.py)

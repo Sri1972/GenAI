@@ -1,6 +1,6 @@
 import {
   AlertCircle, Check, ChevronDown, ChevronRight,
-  ExternalLink, FolderPlus, Info, Pencil, Play, Square, Trash2, X,
+  FolderPlus, Info, Pencil, Sparkles, Trash2, X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -45,7 +45,6 @@ function SourceBadge({ source = 'prompt', label = 'Instructions', figmaUrl = '',
 }
 
 export default function Sidebar() {
-  const { setPreviewUrl: onPreview } = useProjectsCtx()
   const { name: activeProject } = useParams<{ name: string }>()
   const navigate = useNavigate()
   const { projects, busyMap, genMap, setBusy, refresh } = useProjectsCtx()
@@ -83,28 +82,9 @@ export default function Sidebar() {
       setNewName(''); setNameErr('')
       await refresh()
       setExpanded(slug)
-      navigate(`/project/${slug}`)
+      navigate(`/chat/${slug}`)
     } catch (e: any) { setNameErr(e.message) }
     finally { setCreating(false) }
-  }
-
-  const startP = async (name: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (isProjectBusy(name)) return
-    setBusy(name, 'starting')
-    try {
-      const r = await api.start(name)
-      if (r.url) onPreview(r.url)
-    } catch {}
-    setBusy(name, null)
-  }
-
-  const stopP = async (name: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (isProjectBusy(name)) return
-    setBusy(name, 'stopping')
-    try { await api.stop(name) } catch {}
-    setBusy(name, null)
   }
 
   const deleteP = (name: string, e: React.MouseEvent) => {
@@ -146,7 +126,7 @@ export default function Sidebar() {
       cancelRename()
       refresh()
       if (activeProject === oldName) {
-        navigate(`/project/${res.name}`)
+        navigate(`/chat/${res.name}`)
       }
     } catch (e: any) {
       setRenameErr(e.message)
@@ -157,8 +137,20 @@ export default function Sidebar() {
     <>
     <aside className="w-56 flex-shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
 
+      {/* Conversational SDK builder entry — always visible */}
+      <div className="px-3 pt-3 pb-2 flex-shrink-0">
+        <button
+          onClick={() => navigate('/chat')}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg
+                     bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold
+                     shadow-sm transition-colors"
+        >
+          <Sparkles size={13} /> Chat to Build (SDK)
+        </button>
+      </div>
+
       {/* Section label */}
-      <div className="px-3 pt-3 pb-1 flex-shrink-0">
+      <div className="px-3 pt-1 pb-1 flex-shrink-0">
         <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
           App Projects
         </div>
@@ -217,7 +209,7 @@ export default function Sidebar() {
                   if (isRenaming) return
                   setExpanded(isExpanded ? null : p.name)
                   if (activeProject !== p.name) {
-                    navigate(`/project/${p.name}`)
+                    navigate(`/chat/${p.name}`)
                   }
                 }}
                 style={isActive ? {boxShadow:'inset -2px 0 0 #6366f1', background:'rgba(99,102,241,0.1)'} : undefined}
@@ -292,7 +284,8 @@ export default function Sidebar() {
                     </div>
                   )}
 
-                  {/* Status + URL */}
+                  {/* Status — lifecycle is implicit: opening the project runs it, and each
+                      chat turn keeps it running. No manual Start/Stop. */}
                   <div className="flex items-center gap-1.5">
                     {genMap[p.name]?.loading
                       ? <span className="text-xs text-indigo-600 flex items-center gap-1">
@@ -300,69 +293,25 @@ export default function Sidebar() {
                         </span>
                       : p.running
                         ? <span className="text-xs text-emerald-600 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Running
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
                           </span>
-                        : <span className="text-xs text-slate-500">Stopped</span>
+                        : p.hasApp
+                          ? <span className="text-xs text-slate-500">Idle · opens on click</span>
+                          : <span className="text-xs text-slate-500 italic">No app yet</span>
                     }
                     {p.hasApp && p.port && !genMap[p.name]?.loading && (
                       <span className="text-xs text-slate-500 ml-auto">:{p.port}</span>
                     )}
                   </div>
 
-                  {/* URL — only show when ready, not during build */}
-                  {p.running && p.url && !genMap[p.name]?.loading && (
-                    <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-xs text-indigo-600 font-mono truncate flex-1">{p.url}</span>
-                    </div>
-                  )}
-
-                  {/* Actions — app controls (only when app exists AND not building) */}
-                  {p.hasApp && !genMap[p.name]?.loading && (
-                    <div className="flex gap-1.5">
-                      {p.running && p.url && (
-                        <button
-                          onClick={e => { e.stopPropagation(); onPreview(p.url!) }}
-                          className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100
-                                     text-indigo-700 border border-indigo-200 transition-colors flex-1 justify-center"
-                        >
-                          <ExternalLink size={11} /> Preview
-                        </button>
-                      )}
-                      {p.running
-                        ? <button
-                            onClick={e => stopP(p.name, e)}
-                            disabled={!!isBusy}
-                            className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200
-                                       text-slate-600 hover:text-slate-800 transition-colors disabled:opacity-40 flex-1 justify-center"
-                          >
-                            {isBusy === 'stopping'
-                              ? <span className="w-2.5 h-2.5 rounded-full border border-slate-400 border-t-transparent animate-spin" />
-                              : <Square size={11} />}
-                            Stop
-                          </button>
-                        : <button
-                            onClick={e => startP(p.name, e)}
-                            disabled={!!isBusy}
-                            className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100
-                                       text-emerald-700 hover:text-emerald-800 border border-emerald-200 transition-colors disabled:opacity-40 flex-1 justify-center"
-                          >
-                            {isBusy === 'starting'
-                              ? <span className="w-2.5 h-2.5 rounded-full border border-emerald-400 border-t-transparent animate-spin" />
-                              : <Play size={11} />}
-                            Start
-                          </button>
-                      }
-                    </div>
-                  )}
-
-                  {!p.hasApp && (
-                    genMap[p.name]?.loading
-                      ? <div className="flex items-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 rounded px-2 py-1 border border-indigo-200">
-                          <span className="w-2 h-2 rounded-full border border-indigo-400 border-t-transparent animate-spin flex-shrink-0" />
-                          Building… {genMap[p.name]?.step ?? ''}
-                        </div>
-                      : <p className="text-xs text-slate-500 italic">No app generated yet</p>
-                  )}
+                  {/* Open in the conversational builder */}
+                  <button
+                    onClick={e => { e.stopPropagation(); navigate(`/chat/${p.name}`) }}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-violet-50 hover:bg-violet-100
+                               text-violet-700 border border-violet-200 transition-colors w-full justify-center"
+                  >
+                    <Sparkles size={11} /> Open chat
+                  </button>
 
                   {/* Rename / Delete — always available */}
                   <div className="flex gap-1.5 pt-1">

@@ -43,6 +43,18 @@ _JOBS_DIR: Path | None = None  # initialized after GENERATED_DIR available
 app = FastAPI(title="TurboUIGen")
 _executor = ThreadPoolExecutor(max_workers=4)
 
+# Phase 4: conversational SDK-native builder (SSE). Mounted before the catch-all UI route.
+from API.agent_routes import agent_router
+app.include_router(agent_router)
+
+# Unified project workspace (Phase A): create/list/delete projects + upload reference files.
+from API.project_routes import project_router
+app.include_router(project_router)
+
+# Brainstorming roundtable (Phase C): SSE meeting stream + control endpoints.
+from API.roundtable_routes import roundtable_router
+app.include_router(roundtable_router)
+
 _ROOT   = Path(__file__).resolve().parent.parent   # TurboUIGen/
 UI_DIST = _ROOT / "UI" / "dist"
 UI_DEV  = _ROOT / "UI" / "index.html"
