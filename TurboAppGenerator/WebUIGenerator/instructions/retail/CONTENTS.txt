@@ -1,0 +1,39 @@
+RETAIL DOMAIN — RetailNerve
+============================
+
+App Name: store-ops
+Theme: Vibrant retail operations — warm, energetic, card-heavy
+Accent: #F59E0B (amber — retail energy)
+Secondary: #7C3AED (purple — premium/loyalty)
+Style: Light mode, bold headers, rounded 12px corners, playful but professional
+
+PAGES:
+  1. Live Floor — Real-time store grid/tiles, spatial layout (NOT a map, NOT a table)
+  2. Hourly Pulse — Store x hour heatmap, conversion funnel, staff efficiency scatter
+  3. Promo War Room — Gantt-style promo timeline + grouped bar comparison + ROI leaderboard
+  4. Store Cards — Store comparison cards with performance badges (NOT a data grid)
+  5. Ask RetailBot — AI assistant for store ops queries
+  6. Performance Lab — ADVANCED CHARTS showcase (see below)
+
+CHART TYPES EXERCISED:
+  - Heatmap (store x hour revenue, Hourly Pulse)
+  - Conversion funnel (traffic → transactions → revenue, Hourly Pulse)
+  - Scatter plot (staff on floor vs revenue per staff, Hourly Pulse)
+  - Gantt-style timeline (promo campaigns by date range, Promo War Room)
+  - Grouped bar chart (avg redemptions/revenue by promo type, Promo War Room)
+  - Funnel chart (foot traffic → browsing → basket → purchase → loyalty, Performance Lab)
+  - Radar chart (store format comparison: traffic, revenue, basket, satisfaction, staff, Performance Lab)
+  - Waterfall chart (revenue bridge: base → promo uplift → seasonality → net, Performance Lab)
+  - Polar/rose chart (revenue by hour of day — peak hours visualization, Performance Lab)
+  - Treemap (revenue by store format by store, Performance Lab)
+  - Histogram (basket size distribution, Performance Lab)
+  - Bubble chart (stores by sqft vs revenue/sqft vs employees, Performance Lab)
+
+NOTE: This app deliberately avoids maps — "Live Floor"'s store grid IS the
+spatial view (see store-ops-app.md Behavior notes). Do not add a geographic
+map anywhere in this app.
+
+DATA TABLES:
+  - stores (store info, format, sqft, employees, rating)
+  - hourly_metrics (foot traffic, transactions, revenue, queue times)
+  - promotions (promo campaigns, redemptions, attributed revenue)

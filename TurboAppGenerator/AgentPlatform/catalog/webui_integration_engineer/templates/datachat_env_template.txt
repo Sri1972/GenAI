@@ -1,0 +1,24 @@
+# DataChat API Server Configuration
+# Copy this to .env in your project root and fill in values
+
+# AWS Bedrock — PRIMARY for this chat feature (no action needed unless you
+# want to override the model/region/profile below; AWS credentials are
+# resolved via AWS_PROFILE, not an API key here)
+# BEDROCK_MODEL_ID=arn:aws:bedrock:us-east-1:992382856886:application-inference-profile/oonx9pzz8l4h
+# AWS_REGION=us-east-1
+# AWS_PROFILE=default
+# BEDROCK_TIMEOUT=120
+
+# LiteLLM Proxy (OpenAI-compatible endpoint) — used automatically as a
+# last-resort backup only if Bedrock itself is unavailable
+LITELLM_API_BASE={{LITELLM_API_BASE}}
+LITELLM_API_KEY={{LITELLM_API_KEY}}
+LITELLM_SSL_CERT={{LITELLM_SSL_CERT}}
+LITELLM_TIMEOUT=120
+LITELLM_MODEL={{LITELLM_MODEL}}
+
+# API Server Port
+API_PORT=8080
+
+# Data REST API base URL (the main backend that serves /api/data/{table} endpoints)
+DATA_API_BASE=http://localhost:8080

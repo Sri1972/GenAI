@@ -1,0 +1,36 @@
+EDUCATION DOMAIN — CampusIQ
+=============================
+
+App Name: campus-insights
+Theme: Modern edtech — approachable, colorful, student-friendly
+Accent: #0EA5E9 (sky blue — openness, clarity)
+Style: Bright, generous spacing, friendly typography
+
+PAGES:
+  1. Student Mosaic — Waffle/mosaic grid (one cell per student, NOT a table) + donut rings
+  2. Assignment Tracker — Submission calendar + grade distribution beeswarm/swarm plot
+  3. Risk Radar — Radar/polar risk chart + trend sparklines
+  4. Office Hours — Stacked horizontal bar (outcomes) + bar chart (topic frequency)
+  5. Advisor AI — AI assistant for student success queries
+  6. Academic Analytics — ADVANCED CHARTS showcase (see below)
+
+CHART TYPES EXERCISED:
+  - Waffle/mosaic chart (student risk grid, Student Mosaic)
+  - Donut chart x3 (student demographics by program/year/campus, Student Mosaic)
+  - Calendar heat-dots (submission status by day, Assignment Tracker)
+  - Beeswarm/swarm plot (grade distribution by assignment type, Assignment Tracker)
+  - Radar/polar chart (risk indicators: academic, social, attendance, participation, financial, health, Risk Radar)
+  - Sparkline mini line charts (at-risk count trend over 8 weeks, Risk Radar)
+  - Stacked horizontal bar (office hour outcomes breakdown, Office Hours)
+  - Horizontal bar chart (topic frequency, Office Hours)
+  - Radar/spider chart (student wellness dimensions, Academic Analytics)
+  - Sunburst chart (course enrollment: school → department → course → section, Academic Analytics)
+  - Box plot (GPA distribution by department, Academic Analytics)
+  - Funnel chart (student retention: Enrolled → Midterm → Finals → Pass → Graduate, Academic Analytics)
+  - Histogram (grade distribution per course, Academic Analytics)
+  - Polar chart (office hour visits by day of week, Academic Analytics)
+
+DATA TABLES:
+  - students (demographics, GPA, credits, risk_level, engagement)
+  - assignments (course, submission status, grade, due dates)
+  - office_hours (appointment logs, topics, outcomes, no-shows)

@@ -1,0 +1,8 @@
+# MCPGenerator's own orchestration code reuses WebUIGenerator's agents.llm /
+# agents.uigen_agent (both already on sys.path via run.py), so this file only lists
+# what this project's own modules import directly. fastmcp/mcp SDK is a dependency
+# of GENERATED MCP server projects (installed into their own venv on first run),
+# not of the platform itself — same split as WebAPIGenerator/requirements.txt vs.
+# a generated API project's own requirements.txt.
+python-dotenv
+httpx

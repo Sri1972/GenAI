@@ -1,0 +1,36 @@
+# ContentAgents — shared Python dependencies across all six agents.
+# The claude CLI itself is installed separately: npm install -g @anthropic-ai/claude-code
+
+# excel_parser
+openpyxl>=3.1.2
+
+# pdf_parser, ppt_creator (PDF-template mode)
+PyMuPDF>=1.24.0
+pdfplumber>=0.11.0
+
+# ppt_creator
+python-pptx>=1.0.2
+
+# image_parser, media_parser (keyframe resizing)
+pillow>=10.3.0
+
+# media_parser (local transcription — no AWS required)
+faster-whisper>=1.0.3
+
+# site_crawler
+playwright>=1.43.0
+
+# pdf_creator
+reportlab>=4.2.0
+
+# ui (test/demo server)
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+
+# ui/server.py's Workflow runner -- self-HTTP calls into Product Forge /
+# Web UI Generator when embedded inside TurboAppGenerator
+httpx>=0.27.0
+
+# common/claude_agent_client.py — SDK-based alternative to the CLI subprocess wrapper
+claude-agent-sdk>=0.2.0

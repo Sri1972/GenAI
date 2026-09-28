@@ -1,0 +1,17 @@
+# TurboUI App Server Configuration
+DB_PATH=data.db
+API_PORT=8080
+
+# LLM Configuration (for AI chat feature)
+LITELLM_API_BASE={{LITELLM_API_BASE}}
+LITELLM_API_KEY={{LITELLM_API_KEY}}
+LITELLM_SSL_CERT={{LITELLM_SSL_CERT}}
+LITELLM_MODEL={{LITELLM_MODEL}}
+LITELLM_TIMEOUT=180
+
+# AWS Bedrock fallback (used automatically if LiteLLM is unavailable — no
+# action needed unless you want to override the model/region/profile below)
+# BEDROCK_MODEL_ID=arn:aws:bedrock:us-east-1:992382856886:application-inference-profile/oonx9pzz8l4h
+# AWS_REGION=us-east-1
+# AWS_PROFILE=default
+# BEDROCK_TIMEOUT=120

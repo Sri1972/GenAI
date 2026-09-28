@@ -1,0 +1,10 @@
+# Java Spring Boot Backend Configuration
+# TurboUIGen auto-populates these during generation
+
+# Java / Maven paths (auto-detected or set manually)
+JAVA_HOME={{JAVA_HOME}}
+MAVEN_HOME={{MAVEN_HOME}}
+
+# Server
+PORT=8080
+DB_PATH=data.db

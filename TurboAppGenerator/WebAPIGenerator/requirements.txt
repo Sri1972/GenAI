@@ -1,0 +1,5 @@
+# WebAPIGenerator's own orchestration code reuses WebUIGenerator's agents.llm /
+# agents.uigen_agent (both already on sys.path via run.py), so this file only lists
+# what this project's own modules import directly.
+python-dotenv
+httpx

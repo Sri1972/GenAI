@@ -1,0 +1,3 @@
+# FairSplit — Group Expense Splitter
+
+A responsive web application for splitting bills among friends after group dinners, trips, or shared housing expenses. Users upload a photo of a receipt, the app extracts line items via OCR, and people claim which items they ordered. It calculates who owes whom (minimizing the number of transactions), handles tax/tip proportionally, and sends payment reminders via email. Supports recurring splits for roommates (rent, utilities). Built as a React + TypeScript single-page app with a Node.js/Express backend and PostgreSQL database. Deployed as a standard web app (not mobile).

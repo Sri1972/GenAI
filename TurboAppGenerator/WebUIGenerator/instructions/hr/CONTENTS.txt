@@ -1,0 +1,37 @@
+HR DOMAIN — TalentScope
+========================
+
+App Name: people-analytics
+Theme: Modern HR tech — clean, human-centered, generous spacing
+Accent: #6366F1 (indigo — trust, stability)
+Secondary: #EC4899 (pink — diversity, warmth)
+Style: Light mode, large typography, soft shadows, 16px corners
+
+PAGES:
+  1. Org Pulse — Engagement sunburst (radial, NOT a dashboard) + multi-line mood trend
+  2. Nine-Box — Interactive 3x3 performance/potential grid with employee chips (NOT a scatter/bubble chart)
+  3. 1:1 Tracker — Manager check-in logs with cadence heatmap + sentiment trends
+  4. Goal Progress — OKR tracking with radar chart + cumulative progress line chart
+  5. HR Copilot — AI assistant for people queries
+  6. Workforce Insights — ADVANCED CHARTS showcase (see below)
+
+CHART TYPES EXERCISED:
+  - Sunburst chart (engagement by department/level, Org Pulse)
+  - Multi-line chart (mood/sentiment trend by department, Org Pulse)
+  - Mini circular gauges (per-employee engagement, Org Pulse flight-risk cards)
+  - Interactive 3x3 grid (performance vs potential, employee chips per cell, Nine-Box)
+  - Cadence heatmap (1:1 meeting frequency, 1:1 Tracker)
+  - Stacked horizontal bar (1:1 mood breakdown per manager, 1:1 Tracker)
+  - Radar/spider chart (goal category progress, Goal Progress)
+  - Line chart (cumulative goals completed over time, Goal Progress)
+  - Radar/spider chart (employee skills assessment — 6 dimensions, Workforce Insights)
+  - Sunburst chart (org hierarchy: dept → team → level, Workforce Insights)
+  - Box plot (salary distribution by department, Workforce Insights)
+  - Funnel chart (hiring pipeline: Applied → Phone → Onsite → Offer → Hired, Workforce Insights)
+  - Histogram (engagement score distribution, Workforce Insights)
+  - Polar/rose chart (1:1 meeting topics frequency by category, Workforce Insights)
+
+DATA TABLES:
+  - employees (demographics, salary, performance, engagement, flight_risk)
+  - one_on_ones (meeting logs, mood, topics, sentiment)
+  - goals (OKRs — title, category, status, progress, due date)

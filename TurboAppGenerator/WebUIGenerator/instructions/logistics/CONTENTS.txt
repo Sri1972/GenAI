@@ -1,0 +1,32 @@
+LOGISTICS DOMAIN — FreightCommand
+===================================
+
+App Name: supply-chain
+Theme: Industrial logistics — bold, utilitarian, data-dense
+Accent: #EA580C (burnt orange — urgency, industrial)
+Secondary: #2563EB (blue — tracking, reliability)
+Style: Semi-dark sidebar, white content, monospace tracking IDs
+
+PAGES:
+  1. Shipment Timeline — Milestone tracking with visual timeline (Gantt-style lanes, NOT a table)
+  2. Carrier Scorecard — Ranked leaderboard cards + radar chart comparison
+  3. Exception Board — Kanban-style alerts/exceptions board with status cards
+  4. Network Graph — Force-directed node-link graph of trade lanes (NOT a geographic map)
+  5. Logistics AI — AI assistant for shipment queries
+  6. Analytics Deep Dive — ADVANCED CHARTS showcase (see below)
+
+CHART TYPES EXERCISED:
+  - Radar/spider chart (carrier comparison: on-time %, cost, delay, reliability, coverage)
+  - Grouped bar chart (mode comparison: on-time vs cost vs delay by mode)
+  - Donut chart (exception root-cause breakdown)
+  - Force-directed network graph (trade lanes: cities as nodes, routes as edges — NOT a map)
+  - Sankey diagram (cargo flow: origin country → mode → destination country)
+  - Waterfall chart (delay attribution: port wait + customs + weather + carrier)
+  - Treemap (shipment value by mode by carrier by customer)
+  - Bubble chart (shipments by weight vs value vs delay)
+  - Gauge chart row (fleet utilization %, on-time rate, exception resolution rate)
+
+DATA TABLES:
+  - shipments (tracking, origin, dest, mode, carrier, status, value, delay)
+  - milestones (event log per shipment with timestamps)
+  - carriers (performance metrics, cost index, reliability)
