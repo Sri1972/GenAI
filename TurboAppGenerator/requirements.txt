@@ -36,4 +36,25 @@ python-multipart>=0.0.9
 claude-agent-sdk>=0.2.0
 
 # AWS relay (optional — only needed for Bedrock-based LLM routing)
-# boto3>=1.34.0
+boto3>=1.34.0
+
+# DataQualityAgent tab: file profiling + DB introspection + code execution.
+# Uses the default AWS credential chain (same AWS_PROFILE/AWS_REGION as
+# Bedrock above) for S3 -- no separate AWS-key UI. DB drivers are used for
+# a best-effort LIVE schema probe; any connection failure (missing driver,
+# bad creds, network) falls back to user-pasted schema info rather than
+# failing generation -- see DataQualityAgent/run.py's profile_database().
+sqlalchemy>=2.0.0
+pandas>=2.2.0            # Parquet profiling/execution (with pyarrow below)
+pyarrow>=15.0.0          # Parquet read/write -- Python-only source type,
+                         # see DataQualityAgent/run.py's PARQUET_LANGUAGES
+psycopg2-binary>=2.9.9   # PostgreSQL
+pymysql>=1.1.0           # MySQL
+oracledb>=2.0.0          # Oracle -- pure Python, no Oracle Instant Client needed
+# pyodbc>=5.1.0           # SQL Server -- also needs the Microsoft "ODBC Driver
+                          # 17 for SQL Server" installed on the OS; left
+                          # commented out since it fails to even import
+                          # without that native driver present. Uncomment
+                          # once it's installed -- SQL Server profiling/
+                          # execution gracefully fall back to pasted-schema
+                          # mode without it, per profile_database().

@@ -157,7 +157,7 @@ export default function Sidebar() {
 
   return (
     <>
-    <aside className="w-56 flex-shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
+    <aside className="w-56 h-full flex-shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
 
       {/* Section label */}
       <div className="px-3 pt-3 pb-1 flex-shrink-0">

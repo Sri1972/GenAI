@@ -52,7 +52,7 @@ export default function FigmaSidebar({ activeProject, onSelect }: {
 
   return (
     <>
-    <aside className="w-52 flex-shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
+    <aside className="w-52 h-full flex-shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
 
       {/* New project form */}
       <div className="px-3 pt-3 pb-2 border-b border-slate-200 flex-shrink-0">

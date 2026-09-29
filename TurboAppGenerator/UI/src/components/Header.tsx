@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Layers, Zap, Server, BookOpen, Bot, Plug, Hammer, Workflow, ChevronDown, AlertTriangle } from 'lucide-react'
+import { Layers, Zap, Server, BookOpen, Bot, Plug, Hammer, Workflow, ChevronDown, AlertTriangle, GraduationCap, ShieldCheck } from 'lucide-react'
 import AgentsSkillsModal from './AgentsSkillsModal'
 import { useModelCtx } from '../App'
 
-export type Tab = 'workflow' | 'forge' | 'mockup' | 'webapp' | 'api' | 'mcp' | 'utility_agents'
+export type Tab = 'workflow' | 'forge' | 'mockup' | 'webapp' | 'api' | 'mcp' | 'utility_agents' | 'data_quality' | 'land_d'
 
 interface Props {
   activeTab: Tab
@@ -114,6 +114,20 @@ export default function Header({ activeTab, onChange }: Props) {
           label="Utility Agents"
           accent="teal"
         />
+        <TabButton
+          active={activeTab === 'data_quality'}
+          onClick={() => onChange('data_quality')}
+          icon={<ShieldCheck size={13} />}
+          label="Data Quality"
+          accent="cyan"
+        />
+        <TabButton
+          active={activeTab === 'land_d'}
+          onClick={() => onChange('land_d')}
+          icon={<GraduationCap size={13} />}
+          label="Tech L&D"
+          accent="sky"
+        />
       </div>
     </header>
   )
@@ -210,7 +224,7 @@ function ModelPicker() {
 
 function TabButton({ active, onClick, icon, label, accent }: {
   active: boolean; onClick: () => void
-  icon: React.ReactNode; label: string; accent: 'violet' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'teal'
+  icon: React.ReactNode; label: string; accent: 'violet' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'teal' | 'sky' | 'cyan'
 }) {
   const accentMap = {
     violet: 'border-violet-600 text-violet-700',
@@ -219,6 +233,8 @@ function TabButton({ active, onClick, icon, label, accent }: {
     amber: 'border-amber-600 text-amber-700',
     rose: 'border-rose-600 text-rose-700',
     teal: 'border-teal-600 text-teal-700',
+    sky: 'border-sky-600 text-sky-700',
+    cyan: 'border-cyan-600 text-cyan-700',
   }
   const activeClass = accentMap[accent]
 

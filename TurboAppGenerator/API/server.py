@@ -394,6 +394,68 @@ async def api_content_agents_status():
     return {"installed": _content_agents_mount_error is None, "error": _content_agents_mount_error}
 
 
+# ── Data Quality Agent — its API only, no embedded frontend, same shape as
+# ContentAgents/LandDAgent above. Profiles a data source (Excel/delimited
+# file or a database), generates a Python or Java data-quality-check
+# project via an LLM call, and executes it; backs the "Data Quality" tab.
+# Fully independent of WebUIGenerator/WebAPIGenerator by design (no shared
+# execution/runner code, own generated-code storage) -- the only shared
+# import is ContentAgents/common/claude_cli.py's generic LLM-calling
+# wrapper, same as LandDAgent below.
+_data_quality_mount_error: str | None = None
+try:
+    _DATA_QUALITY_DIR = Path(__file__).resolve().parent.parent / "DataQualityAgent"
+    if not (_DATA_QUALITY_DIR / "dq_server.py").exists():
+        _data_quality_mount_error = f"DataQualityAgent not found at {_DATA_QUALITY_DIR}"
+    else:
+        if str(_DATA_QUALITY_DIR) not in sys.path:
+            sys.path.insert(0, str(_DATA_QUALITY_DIR))
+        # Named dq_server, not server -- same sys.modules bare-name-collision
+        # reason LandDAgent's module is named l_and_d_server, see below.
+        from dq_server import router as _data_quality_router  # noqa: E402  DataQualityAgent's own routes, unmodified
+
+        app.include_router(_data_quality_router, prefix="/data-quality")
+except Exception as _e:
+    _data_quality_mount_error = f"DataQualityAgent failed to load: {_e}"
+
+
+@app.get("/api/data-quality/status")
+async def api_data_quality_status():
+    return {"installed": _data_quality_mount_error is None, "error": _data_quality_mount_error}
+
+
+# ── Tech L&D Agent — its API only, no embedded frontend, same shape as
+# ContentAgents just above. Generates Learning & Development / POC
+# documentation from a typed topic via a persona system prompt; backs the
+# "Tech L&D" tab in this app's own UI. Reuses ContentAgents/common/
+# claude_cli.py rather than depending on ContentAgents' router (see
+# LandDAgent/run.py's own sys.path setup), so this mounts independently of
+# whether the ContentAgents block above succeeded.
+_land_d_mount_error: str | None = None
+try:
+    _LAND_D_DIR = Path(__file__).resolve().parent.parent / "LandDAgent"
+    if not (_LAND_D_DIR / "l_and_d_server.py").exists():
+        _land_d_mount_error = f"LandDAgent not found at {_LAND_D_DIR}"
+    else:
+        if str(_LAND_D_DIR) not in sys.path:
+            sys.path.insert(0, str(_LAND_D_DIR))
+        # Named l_and_d_server, not server -- ContentAgents' own module above
+        # is ALSO literally named server.py; sys.modules caches by bare
+        # module name, so a second `from server import ...` here would
+        # silently resolve to ContentAgents' already-imported module instead
+        # of this one. Same reasoning as Workflow's workflow_server.py below.
+        from l_and_d_server import router as _land_d_router  # noqa: E402  LandDAgent's own routes, unmodified
+
+        app.include_router(_land_d_router, prefix="/land-d")
+except Exception as _e:
+    _land_d_mount_error = f"LandDAgent failed to load: {_e}"
+
+
+@app.get("/api/land-d/status")
+async def api_land_d_status():
+    return {"installed": _land_d_mount_error is None, "error": _land_d_mount_error}
+
+
 # ── Workflow — the DAG-of-agents engine behind the "Workflow" tab. Depends on
 # ContentAgents (mounted just above) for its reader/creator agent packages and
 # its library store, and reaches WebUIGenerator/WebAPIGenerator/MCPGenerator/

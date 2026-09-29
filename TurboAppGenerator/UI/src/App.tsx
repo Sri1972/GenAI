@@ -16,6 +16,10 @@ import WorkflowPage from './pages/WorkflowPage'
 import WorkflowSidebar from './components/WorkflowSidebar'
 import UtilityAgentsPage from './pages/UtilityAgentsPage'
 import ContentAgentsSidebar from './components/ContentAgentsSidebar'
+import LandDAgentPage from './pages/LandDAgentPage'
+import LandDSidebar from './components/LandDSidebar'
+import DataQualityPage from './pages/DataQualityPage'
+import DataQualitySidebar from './components/DataQualitySidebar'
 import { api } from './hooks/useApi'
 import { Agent } from './hooks/contentAgentsApi'
 import { FigmaProject, GenerateResult, GenerateStep, ModelsResponse, Project } from './types'
@@ -146,7 +150,7 @@ function WebAppEmptyState({ onSwitch }: { onSwitch: () => void }) {
 // Forge's bare page with no Header/tab bar around it, instead of this shell.
 const TAB_PATHS: Record<Tab, string> = {
   forge: '/productforge', mockup: '/figmamockup', api: '/webapi', mcp: '/mcp', webapp: '/webui',
-  workflow: '/workflow', utility_agents: '/utilityagents',
+  workflow: '/workflow', utility_agents: '/utilityagents', data_quality: '/dataquality', land_d: '/techld',
 }
 
 // ── App ────────────────────────────────────────────────────────────────────────
@@ -164,6 +168,8 @@ export default function App() {
     location.pathname.startsWith('/mcp')           ? 'mcp'            :
     location.pathname.startsWith('/workflow')      ? 'workflow'       :
     location.pathname.startsWith('/utilityagents') ? 'utility_agents' :
+    location.pathname.startsWith('/dataquality')   ? 'data_quality'   :
+    location.pathname.startsWith('/techld')        ? 'land_d'         :
     location.pathname.startsWith('/productforge')  ? 'forge'          : 'webapp'
 
   // Web UI has real sub-routes (/webui, /webui/project/:name) instead of one
@@ -222,6 +228,16 @@ export default function App() {
 
   // Utility Agents tab state (which of the 8 agents is selected)
   const [activeUtilityAgent, setActiveUtilityAgent] = useState<Agent>('excel_parser')
+
+  // Tech L&D tab state (which saved item is shown, null = "new" create form)
+  const [activeLandDItem, setActiveLandDItem] = useState<string | null>(null)
+  // Bumped whenever a generate/regenerate/delete completes, so LandDSidebar's
+  // list refreshes immediately instead of waiting for its own 5s poll.
+  const [landDRefreshKey, setLandDRefreshKey] = useState(0)
+
+  // Data Quality tab state -- same shape as Tech L&D just above.
+  const [activeDataQualityItem, setActiveDataQualityItem] = useState<string | null>(null)
+  const [dataQualityRefreshKey, setDataQualityRefreshKey] = useState(0)
 
   // Figma mockup projects state
   const [figmaProjects,        setFigmaProjects]        = useState<FigmaProject[]>([])
@@ -367,6 +383,18 @@ export default function App() {
                           selected={activeUtilityAgent}
                           onSelect={setActiveUtilityAgent}
                         />
+                      : activeTab === 'data_quality'
+                      ? <DataQualitySidebar
+                          activeItemId={activeDataQualityItem}
+                          onSelect={setActiveDataQualityItem}
+                          refreshKey={dataQualityRefreshKey}
+                        />
+                      : activeTab === 'land_d'
+                      ? <LandDSidebar
+                          activeItemId={activeLandDItem}
+                          onSelect={setActiveLandDItem}
+                          refreshKey={landDRefreshKey}
+                        />
                       : <Sidebar />
                     }
                   </CollapsibleSidebar>
@@ -412,6 +440,30 @@ export default function App() {
                   >
                     <UtilityAgentsPage agent={activeUtilityAgent} />
                   </div>
+                  {/* Same reasoning as Utility Agents just above -- a
+                      half-typed topic/instructions edit shouldn't reset if
+                      you glance at another tab. */}
+                  <div
+                    className="flex-1 min-h-0 flex flex-col overflow-hidden"
+                    style={{ display: activeTab === 'land_d' ? 'flex' : 'none' }}
+                  >
+                    <LandDAgentPage
+                      activeItemId={activeLandDItem}
+                      onSelect={setActiveLandDItem}
+                      onChanged={() => setLandDRefreshKey(k => k + 1)}
+                    />
+                  </div>
+                  {/* Same reasoning as Tech L&D just above. */}
+                  <div
+                    className="flex-1 min-h-0 flex flex-col overflow-hidden"
+                    style={{ display: activeTab === 'data_quality' ? 'flex' : 'none' }}
+                  >
+                    <DataQualityPage
+                      activeItemId={activeDataQualityItem}
+                      onSelect={setActiveDataQualityItem}
+                      onChanged={() => setDataQualityRefreshKey(k => k + 1)}
+                    />
+                  </div>
                   {activeTab === 'mockup'
                     ? <FigmaMockupPage />
                     : activeTab === 'api'
@@ -429,6 +481,10 @@ export default function App() {
                     : activeTab === 'workflow'
                     ? null
                     : activeTab === 'utility_agents'
+                    ? null
+                    : activeTab === 'land_d'
+                    ? null
+                    : activeTab === 'data_quality'
                     ? null
                     : (
                       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">

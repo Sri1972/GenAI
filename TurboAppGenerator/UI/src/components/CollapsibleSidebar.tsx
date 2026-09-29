@@ -9,10 +9,17 @@ export default function CollapsibleSidebar({ children }: Props) {
   const [collapsed, setCollapsed] = useState(false)
 
   return (
-    <div className="flex flex-shrink-0">
-      {/* Sidebar content */}
+    <div className="flex h-full flex-shrink-0">
+      {/* Sidebar content -- h-full on both this wrapper and the <aside>
+          rendered inside `children` is what makes each sidebar's own
+          overflow-y-auto region actually scroll instead of growing to fit
+          its content and getting clipped by an ancestor's overflow-hidden
+          (confirmed live: without this, aside.scrollHeight just equals
+          clientHeight -- there's nothing to scroll because nothing ever
+          overflowed in the first place, it just silently grew taller than
+          the viewport). */}
       <div
-        className={`overflow-hidden transition-all duration-200 ${collapsed ? 'w-0' : ''}`}
+        className={`h-full overflow-hidden transition-all duration-200 ${collapsed ? 'w-0' : ''}`}
         style={collapsed ? { width: 0 } : undefined}
       >
         {children}

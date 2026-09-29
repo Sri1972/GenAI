@@ -29,6 +29,8 @@ WebAPIGenerator/generated/web-api/*
 !WebAPIGenerator/generated/web-api/.gitkeep
 ContentAgents/library/
 Workflow/workflows/*/runs/
+LandDAgent/library/
+DataQualityAgent/library/
 
 # Local runtime state / scratch files, not source
 .model_selection.json
@@ -38,6 +40,14 @@ WebUIGenerator/sdk_diff_tmp.txt
 *.db
 *.sqlite
 *.sqlite3
+# ...except DataQualityAgent's own example fixtures -- real, small, hand-
+# built test data meant to be committed, not runtime state.
+!DataQualityAgent/examples/*.sqlite
+!DataQualityAgent/examples/*.sqlite3
+
+# Office lock files (created while a file is open in Excel/Word, e.g.
+# ~$customers.xlsx) -- transient, never real content.
+~$*
 
 # Logs
 *.log

@@ -1,0 +1,7 @@
+101|alice@example.com|250.00|shipped
+102|bob@example.com|-15.00|shipped
+103||89.99|pending
+104|dana@example.com|45.50|cancelled
+105|erin@example.com|120.00|unknown
+106|frank@example.com|0.00|pending
+107|grace@example.com|310.25|shipped

@@ -21,7 +21,7 @@ const ORDER: Agent[] = [
 
 export default function ContentAgentsSidebar({ selected, onSelect }: { selected: Agent; onSelect: (a: Agent) => void }) {
   return (
-    <aside className="w-56 flex-shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
+    <aside className="w-56 h-full flex-shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden">
       <div className="px-3 pt-3 pb-1 flex-shrink-0">
         <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
           Utility Agents
